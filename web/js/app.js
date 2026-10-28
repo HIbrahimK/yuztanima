@@ -10,6 +10,11 @@ const state = {
   images: [], // { id, file, name, img, faces: [], processedBlob: null }
   currentIndex: 0,
   
+  // Dokunmatik Araçlar, Seçim & Geri Alma
+  activeTool: 'add', // 'add' (Ekle), 'remove' (Çıkar), 'exempt' (Muafiyet)
+  selectedFaceIndex: -1, // Seçili alanın indeksi (-1 = seçili yok)
+  undoStack: [], // Geri alma geçmişi
+
   // Ayarlar
   method: 'blur', // blur, pixelate, blackbar, emoji
   blurStrength: 30,
@@ -83,18 +88,25 @@ async function loadFaceModel() {
     }
 
     if (window.blazeface) {
-      // Yerel model dosyasından yükle (Harici sunucu/Kaggle bağımlılığı yok!)
+      // Yerel model dosyasından yükle (Harici sunucu bağımlılığı yok)
+      // Kalabalık sınıf fotoğrafları için maxFaces: 100 ve hassas algılama için scoreThreshold: 0.42
       state.model = await blazeface.load({
         modelUrl: './models/model.json',
-        scoreThreshold: 0.55
+        maxFaces: 100,
+        scoreThreshold: 0.42,
+        iouThreshold: 0.3
       });
-      console.log('✅ Yerel BlazeFace modeli başarıyla yüklendi.');
+      console.log('✅ Yerel BlazeFace modeli başarıyla yüklendi (maxFaces: 100, threshold: 0.42).');
     }
   } catch (error) {
     console.warn('Yerel model yüklenirken hata, CDN deneniyor:', error);
     try {
       if (window.blazeface) {
-        state.model = await blazeface.load({ scoreThreshold: 0.55 });
+        state.model = await blazeface.load({
+          maxFaces: 100,
+          scoreThreshold: 0.42,
+          iouThreshold: 0.3
+        });
       }
     } catch (err2) {
       console.error('Yapay zeka modeli yüklenemedi:', err2);
@@ -240,10 +252,60 @@ function initEventListeners() {
   const btnDownloadCurrent = document.getElementById('btnDownloadCurrent');
   const btnDownloadAll = document.getElementById('btnDownloadAll');
   const btnShare = document.getElementById('btnShare');
+  const btnResetPhotos = document.getElementById('btnResetPhotos');
 
   if (btnDownloadCurrent) btnDownloadCurrent.addEventListener('click', downloadCurrentPhoto);
   if (btnDownloadAll) btnDownloadAll.addEventListener('click', downloadAllPhotosZip);
   if (btnShare) btnShare.addEventListener('click', shareCurrentPhoto);
+  if (btnResetPhotos) btnResetPhotos.addEventListener('click', resetToUploadScreen);
+
+  // Dokunmatik Araç Çubuğu (Toolbar)
+  const btnToolAdd = document.getElementById('btnToolAdd');
+  const btnToolRemove = document.getElementById('btnToolRemove');
+  const btnToolExempt = document.getElementById('btnToolExempt');
+  const btnUndo = document.getElementById('btnUndo');
+
+  if (btnToolAdd) btnToolAdd.addEventListener('click', () => setActiveTool('add'));
+  if (btnToolRemove) {
+    btnToolRemove.addEventListener('click', () => {
+      // Eğer bir alan seçiliyse doğrudan o alanı çıkar
+      if (state.selectedFaceIndex >= 0) {
+        deleteSelectedFace();
+      } else {
+        // Değilse çıkarma moduna geç (üzerine tıklananı sil)
+        setActiveTool('remove');
+      }
+    });
+  }
+  if (btnToolExempt) btnToolExempt.addEventListener('click', () => setActiveTool('exempt'));
+  if (btnUndo) btnUndo.addEventListener('click', undoLastAction);
+
+  // Yüz Tanı / Tarama Butonları
+  const btnScanFacesCanvas = document.getElementById('btnScanFacesCanvas');
+  const btnScanFaces = document.getElementById('btnScanFaces');
+  const btnScanCurrentTab = document.getElementById('btnScanCurrentTab');
+  const btnScanAllTab = document.getElementById('btnScanAllTab');
+
+  if (btnScanFacesCanvas) btnScanFacesCanvas.addEventListener('click', scanFacesCurrentPhoto);
+  if (btnScanFaces) btnScanFaces.addEventListener('click', scanFacesCurrentPhoto);
+  if (btnScanCurrentTab) btnScanCurrentTab.addEventListener('click', scanFacesCurrentPhoto);
+  if (btnScanAllTab) btnScanAllTab.addEventListener('click', scanFacesAllPhotos);
+
+  // Seçili Alan Bağlamsal Eylem Çubuğu
+  const btnDeleteSelectedFace = document.getElementById('btnDeleteSelectedFace');
+  const btnToggleSelectedExempt = document.getElementById('btnToggleSelectedExempt');
+  const btnDeselectFace = document.getElementById('btnDeselectFace');
+
+  if (btnDeleteSelectedFace) btnDeleteSelectedFace.addEventListener('click', deleteSelectedFace);
+  if (btnToggleSelectedExempt) btnToggleSelectedExempt.addEventListener('click', toggleSelectedExempt);
+  if (btnDeselectFace) btnDeselectFace.addEventListener('click', deselectFace);
+
+  // Temizle Butonu
+  const btnClearManual = document.getElementById('btnClearManual');
+  if (btnClearManual) btnClearManual.addEventListener('click', clearAllManual);
+
+  // Klavye Kısayolları (Masaüstü Web Uyumluluğu)
+  window.addEventListener('keydown', handleKeyboardShortcuts);
 
   // Tuval Dokunmatik & Fare Etkileşimleri
   setupCanvasInteractions();
@@ -254,50 +316,85 @@ function initEventListeners() {
 // =============================================================================
 function handleFiles(event) {
   if (event.target.files && event.target.files.length > 0) {
-    handleFileList(event.target.files);
+    const files = event.target.files;
+    handleFileList(files);
+    // Aynı veya yeni dosyaların tekrar seçilebilmesi için input değerini sıfırla
+    event.target.value = '';
   }
 }
 
 async function handleFileList(files) {
   const loading = document.getElementById('loadingOverlay');
   const loadingText = document.getElementById('loadingText');
-  loading.style.display = 'flex';
+  if (loading) {
+    loading.style.display = 'flex';
+    loadingText.textContent = 'Fotoğraflar taranıyor...';
+  }
+
+  // Model henüz hazır değilse önce kesinlikle yüklenmesini bekle
+  if (!state.model) {
+    if (loadingText) loadingText.textContent = 'Yapay zeka modeli hazırlanıyor...';
+    await loadFaceModel();
+  }
+
+  const prevTotal = state.images.length;
+  let addedCount = 0;
 
   for (let i = 0; i < files.length; i++) {
     const file = files[i];
     if (!file.type.startsWith('image/')) continue;
 
-    loadingText.textContent = `Yüzler yapay zeka ile taranıyor (${i + 1}/${files.length})...`;
+    if (loadingText) {
+      loadingText.textContent = `Yüzler taranıyor (${i + 1}/${files.length}): ${file.name}...`;
+    }
 
     const img = await loadImageFromFile(file);
-    const faces = await detectFacesInImage(img);
+    if (!img) continue;
+
+    // Yüz tespiti yap (Hassas eşik 0.42, maxFaces 100)
+    const faces = await detectFacesInImage(img, 0.42);
 
     state.images.push({
-      id: Date.now() + '_' + i,
+      id: Date.now() + '_' + i + '_' + Math.random().toString(36).substr(2, 5),
       file: file,
       name: file.name,
       img: img,
       faces: faces,
       processedBlob: null
     });
+
+    addedCount++;
   }
 
-  loading.style.display = 'none';
+  if (loading) loading.style.display = 'none';
 
   if (state.images.length > 0) {
     document.getElementById('uploadDropzone').style.display = 'none';
     document.getElementById('canvasWrapper').style.display = 'flex';
+    document.getElementById('touchToolbar').style.display = 'flex';
+    document.getElementById('canvasModeHint').style.display = 'flex';
     document.getElementById('controlsPanel').style.display = 'block';
     document.getElementById('bottomActionBar').style.display = 'flex';
 
-    if (state.images.length > 1) {
-      document.getElementById('photoStrip').style.display = 'flex';
-      document.getElementById('btnDownloadAll').style.display = 'inline-flex';
+    const photoStrip = document.getElementById('photoStrip');
+    if (photoStrip) photoStrip.style.display = 'flex';
+
+    const btnDownloadAll = document.getElementById('btnDownloadAll');
+    if (btnDownloadAll) {
+      btnDownloadAll.style.display = (state.images.length > 1) ? 'inline-flex' : 'none';
     }
 
     renderThumbnails();
-    state.currentIndex = state.images.length - 1;
-    selectImage(state.currentIndex);
+
+    // Sonradan eklenen ilk veya son fotoğrafa odaklan
+    const targetIndex = (addedCount > 0) ? (state.images.length - 1) : 0;
+    selectImage(targetIndex);
+    setActiveTool('add');
+
+    if (addedCount > 0) {
+      const detectedFacesCount = state.images[targetIndex].faces.length;
+      showToast(`📸 ${addedCount} yeni fotoğraf eklendi (${detectedFacesCount} yüz algılandı).`);
+    }
   }
 }
 
@@ -307,22 +404,43 @@ function loadImageFromFile(file) {
     reader.onload = (e) => {
       const img = new Image();
       img.onload = () => resolve(img);
+      img.onerror = (err) => {
+        console.error('Görsel yüklenemedi:', err);
+        resolve(null);
+      };
       img.src = e.target.result;
+    };
+    reader.onerror = (err) => {
+      console.error('Dosya okunamadı:', err);
+      resolve(null);
     };
     reader.readAsDataURL(file);
   });
 }
 
-async function detectFacesInImage(img) {
+async function detectFacesInImage(img, customThreshold = 0.42) {
+  // Model yüklenmemişse tekrar yükle
   if (!state.model) {
-    console.warn('Model henüz hazır değil.');
+    console.log('Model henüz hazır değil, yükleniyor...');
+    await loadFaceModel();
+  }
+  if (!state.model) {
+    console.warn('Model yüklenemedi.');
     return [];
   }
 
   try {
-    // Büyük fotoğrafları (örneğin 12MP telefon fotoğraflarını) GPU belleğini taşmaması için
-    // en fazla 1024px çözünürlüğe indirgeyerek taratıyoruz
-    const maxDim = 1024;
+    // Model parametrelerini dinamik olarak güncelle
+    if (state.model.scoreThreshold !== undefined) {
+      state.model.scoreThreshold = customThreshold;
+    }
+    if (state.model.maxFaces !== undefined) {
+      state.model.maxFaces = 100;
+    }
+
+    // Telefon fotoğrafları genellikle çok büyüktür (12MP - 48MP)
+    // Kalabalık sınıflardaki küçük yüzlerin kaybolmaması için 1440px çözünürlük kullanıyoruz
+    const maxDim = 1440;
     let inputSource = img;
     let scaleDet = 1.0;
 
@@ -336,7 +454,15 @@ async function detectFacesInImage(img) {
       inputSource = tempCanvas;
     }
 
-    const predictions = await state.model.estimateFaces(inputSource, false);
+    let predictions = await state.model.estimateFaces(inputSource, false);
+
+    // Eğer hiç yüz bulunamadıysa ve hassasiyet artırılabilirse daha düşük eşikle ikinci geçiş yap
+    if (predictions.length === 0 && customThreshold > 0.32) {
+      state.model.scoreThreshold = 0.32;
+      predictions = await state.model.estimateFaces(inputSource, false);
+      state.model.scoreThreshold = customThreshold;
+    }
+
     console.log(`Fotoğrafta ${predictions.length} yüz bulundu.`);
 
     return predictions.map(pred => {
@@ -373,6 +499,7 @@ async function detectFacesInImage(img) {
 // =============================================================================
 function renderThumbnails() {
   const strip = document.getElementById('photoStrip');
+  if (!strip) return;
   strip.innerHTML = '';
 
   state.images.forEach((item, index) => {
@@ -381,14 +508,28 @@ function renderThumbnails() {
     thumb.innerHTML = `
       <img src="${item.img.src}" alt="${item.name}">
       <span class="thumb-badge">${item.faces.length}</span>
+      <button class="thumb-remove" title="Fotoğrafı Kaldır" onclick="event.stopPropagation(); removeImage(${index});">✕</button>
     `;
     thumb.addEventListener('click', () => selectImage(index));
     strip.appendChild(thumb);
   });
+
+  // Şeridin sonuna "+ Ekle" kutucuğu
+  const addTile = document.createElement('label');
+  addTile.className = 'thumb-add-tile';
+  addTile.title = 'Yeni Fotoğraf Ekle';
+  addTile.innerHTML = `
+    <span style="font-size: 1.2rem;">➕</span>
+    <span>Ekle</span>
+    <input type="file" accept="image/*" multiple style="display: none;" onchange="handleFiles(event)">
+  `;
+  strip.appendChild(addTile);
 }
 
 function selectImage(index) {
   state.currentIndex = index;
+  state.selectedFaceIndex = -1;
+  updateSelectedFaceBar();
   document.querySelectorAll('.thumb-item').forEach((t, i) => {
     t.classList.toggle('active', i === index);
   });
@@ -457,14 +598,15 @@ function renderCurrentCanvas() {
   ctx.drawImage(current.img, transform.sx, transform.sy, transform.sw, transform.sh, 0, 0, canvas.width, canvas.height);
 
   // 2. Yüzleri Gizle ve Rehber Çerçeveleri Çiz
-  current.faces.forEach((face) => {
+  current.faces.forEach((face, idx) => {
     const cRect = imageToCanvasRect(face, transform, canvas);
 
     if (!face.exempt) {
       applyHidingStrategy(ctx, cRect.x, cRect.y, cRect.width, cRect.height);
     }
 
-    drawFaceGuide(ctx, cRect.x, cRect.y, cRect.width, cRect.height, face);
+    const isSelected = (idx === state.selectedFaceIndex);
+    drawFaceGuide(ctx, cRect.x, cRect.y, cRect.width, cRect.height, face, isSelected, state.activeTool, idx);
   });
 
   // 3. Kullanıcı Parmağıyla/Fareyle Sürükleme Yapıyorsa Canlı Seçim Kutusunu Çiz
@@ -557,31 +699,89 @@ function applyHidingStrategy(ctx, x, y, w, h) {
   ctx.restore();
 }
 
-function drawFaceGuide(ctx, x, y, w, h, face) {
+function drawFaceGuide(ctx, x, y, w, h, face, isSelected = false, activeTool = 'add', faceIdx = 0) {
   ctx.save();
-  if (face.exempt) {
-    ctx.strokeStyle = '#f59e0b';
+
+  if (isSelected) {
+    // 1. Seçili Alan: Parlak Cam Göbeği / Sky Blue Çerçeve, Gölge & Köşe Tutamaçları
+    ctx.shadowColor = 'rgba(56, 189, 248, 0.85)';
+    ctx.shadowBlur = 10;
+    ctx.strokeStyle = '#38bdf8';
     ctx.lineWidth = 3;
+    ctx.setLineDash([6, 4]);
+    ctx.strokeRect(x, y, w, h);
+    ctx.shadowBlur = 0;
+
+    // Yarı saydam seçim dolgusu
+    ctx.fillStyle = 'rgba(56, 189, 248, 0.12)';
+    ctx.fillRect(x, y, w, h);
+
+    // 4 Köşe Tutamacı
+    const handleSize = 6;
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeStyle = '#0284c7';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([]);
+    const corners = [
+      [x, y],
+      [x + w, y],
+      [x, y + h],
+      [x + w, y + h]
+    ];
+    corners.forEach(([cx, cy]) => {
+      ctx.fillRect(cx - handleSize / 2, cy - handleSize / 2, handleSize, handleSize);
+      ctx.strokeRect(cx - handleSize / 2, cy - handleSize / 2, handleSize, handleSize);
+    });
+
+    // Başlık Rozeti
+    ctx.fillStyle = 'rgba(14, 165, 233, 0.95)';
+    ctx.beginPath();
+    ctx.roundRect(x, Math.max(0, y - 22), 96, 20, 4);
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 11px sans-serif';
+    ctx.fillText(`🎯 Seçili #${faceIdx + 1}`, x + 6, Math.max(14, y - 8));
+  } else if (face.exempt) {
+    // 2. Muafiyetli Yüz: Amber / Turuncu
+    ctx.strokeStyle = '#f59e0b';
+    ctx.lineWidth = 2.5;
     ctx.setLineDash([6, 4]);
     ctx.strokeRect(x, y, w, h);
 
     ctx.fillStyle = 'rgba(245, 158, 11, 0.95)';
-    ctx.fillRect(x, Math.max(0, y - 22), 125, 20);
+    ctx.beginPath();
+    ctx.roundRect(x, Math.max(0, y - 22), 125, 20, 4);
+    ctx.fill();
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 11px sans-serif';
     ctx.fillText('🛡️ Muaf (Öğretmen)', x + 6, Math.max(14, y - 8));
   } else {
+    // 3. Normal Gizlenen Yüz
     ctx.strokeStyle = '#3b82f6';
     ctx.lineWidth = 2;
     ctx.strokeRect(x, y, w, h);
     if (face.manual) {
       ctx.fillStyle = 'rgba(59, 130, 246, 0.9)';
-      ctx.fillRect(x, Math.max(0, y - 18), 32, 16);
+      ctx.beginPath();
+      ctx.roundRect(x, Math.max(0, y - 18), 34, 16, 3);
+      ctx.fill();
       ctx.fillStyle = '#fff';
       ctx.font = 'bold 10px sans-serif';
-      ctx.fillText('[M]', x + 6, Math.max(12, y - 6));
+      ctx.fillText('[M]', x + 8, Math.max(12, y - 6));
     }
   }
+
+  // 4. Eğer "Çıkar" Modu aktifse her kutucuğun sağ üstünde kırmızı silme rozeti göster
+  if (activeTool === 'remove') {
+    ctx.fillStyle = 'rgba(239, 68, 68, 0.95)';
+    ctx.beginPath();
+    ctx.roundRect(x + w - 46, Math.max(0, y - 22), 46, 20, 4);
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 11px sans-serif';
+    ctx.fillText('🗑️ Sil', x + w - 40, Math.max(14, y - 8));
+  }
+
   ctx.restore();
 }
 
@@ -682,7 +882,7 @@ function setupCanvasInteractions() {
     renderCurrentCanvas();
   };
 
-  const onPointerUp = (clientX, clientY) => {
+  const onPointerUp = (clientX, clientY, isShiftHeld = false) => {
     if (!state.isPointerDown) return;
     state.isPointerDown = false;
 
@@ -693,9 +893,9 @@ function setupCanvasInteractions() {
     const dist = Math.hypot(pos.x - state.dragStartCanvasX, pos.y - state.dragStartCanvasY);
     const transform = getCanvasTransform(current, canvas);
 
-    if (dist < 12) {
-      // 1. TIKLAMA / DOKUNMA: Mevcut bir yüzün üzerine tıklandı mı?
-      let toggled = false;
+    if (dist < 15) {
+      // 1. TIKLAMA / DOKUNMA: Bir yüzün veya alanın üzerine mi tıklandı?
+      let clickedIdx = -1;
       for (let i = current.faces.length - 1; i >= 0; i--) {
         const face = current.faces[i];
         const cRect = imageToCanvasRect(face, transform, canvas);
@@ -706,37 +906,58 @@ function setupCanvasInteractions() {
           pos.y >= cRect.y &&
           pos.y <= (cRect.y + cRect.height)
         ) {
-          face.exempt = !face.exempt;
-          toggled = true;
+          clickedIdx = i;
           break;
         }
       }
 
-      if (toggled) {
-        renderCurrentCanvas();
-        return;
+      if (clickedIdx >= 0) {
+        // Shift tuşuna basılıysa VEYA aktif mod 'remove' (Çıkar) ise doğrudan sil
+        if (isShiftHeld || state.activeTool === 'remove') {
+          deleteFace(clickedIdx);
+        } else if (state.activeTool === 'exempt') {
+          // Muafiyet modundaysa muafiyeti aç/kapat
+          toggleFaceExempt(clickedIdx);
+        } else {
+          // Normal / Ekle Modu:
+          if (state.selectedFaceIndex === clickedIdx) {
+            // Zaten seçiliyse muafiyeti aç/kapat
+            toggleFaceExempt(clickedIdx);
+          } else {
+            // Alanı seç ve bağlamsal çubuğu aç
+            selectFace(clickedIdx);
+          }
+        }
+      } else {
+        // Boş alana tıklandıysa seçimi kaldır
+        deselectFace();
       }
+      return;
     } else if (dist >= 18) {
-      // 2. SÜRÜKLEME: Manuel Gizleme Alanı Ekle (Piksel-Hassas Eşleme)
-      const minX = Math.min(state.dragStartCanvasX, pos.x);
-      const minY = Math.min(state.dragStartCanvasY, pos.y);
-      const w = Math.abs(pos.x - state.dragStartCanvasX);
-      const h = Math.abs(pos.y - state.dragStartCanvasY);
+      // 2. SÜRÜKLEME: Manuel Gizleme Alanı Ekle
+      if (state.activeTool === 'add' || state.activeTool === 'exempt') {
+        const minX = Math.min(state.dragStartCanvasX, pos.x);
+        const minY = Math.min(state.dragStartCanvasY, pos.y);
+        const w = Math.abs(pos.x - state.dragStartCanvasX);
+        const h = Math.abs(pos.y - state.dragStartCanvasY);
 
-      if (w >= 15 && h >= 15) {
-        // Tuvaldeki seçimi orijinal resim koordinatlarına dönüştür
-        const imgRect = canvasToImageRect({ x: minX, y: minY, width: w, height: h }, transform, canvas);
+        if (w >= 15 && h >= 15) {
+          saveUndoSnapshot('Manuel Alan Ekle');
+          const imgRect = canvasToImageRect({ x: minX, y: minY, width: w, height: h }, transform, canvas);
 
-        current.faces.push({
-          x: imgRect.x,
-          y: imgRect.y,
-          width: imgRect.width,
-          height: imgRect.height,
-          exempt: false,
-          manual: true
-        });
+          current.faces.push({
+            x: imgRect.x,
+            y: imgRect.y,
+            width: imgRect.width,
+            height: imgRect.height,
+            exempt: false,
+            manual: true
+          });
 
-        renderCurrentCanvas();
+          selectFace(current.faces.length - 1);
+          showToast('➕ Yeni gizleme alanı eklendi.');
+          renderCurrentCanvas();
+        }
       }
     }
 
@@ -746,7 +967,7 @@ function setupCanvasInteractions() {
   // Fare Etkinlikleri
   canvas.addEventListener('mousedown', (e) => onPointerDown(e.clientX, e.clientY));
   window.addEventListener('mousemove', (e) => onPointerMove(e.clientX, e.clientY));
-  window.addEventListener('mouseup', (e) => onPointerUp(e.clientX, e.clientY));
+  window.addEventListener('mouseup', (e) => onPointerUp(e.clientX, e.clientY, e.shiftKey));
 
   // Dokunmatik Etkinlikleri (Mobil)
   canvas.addEventListener('touchstart', (e) => {
@@ -763,9 +984,396 @@ function setupCanvasInteractions() {
 
   canvas.addEventListener('touchend', (e) => {
     if (e.changedTouches.length === 1) {
-      onPointerUp(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+      onPointerUp(e.changedTouches[0].clientX, e.changedTouches[0].clientY, false);
     }
   }, { passive: true });
+}
+
+// =============================================================================
+// Yüz Tanıma & Yeniden Tarama (Yüz Tanı)
+// =============================================================================
+
+async function scanFacesCurrentPhoto() {
+  const current = state.images[state.currentIndex];
+  if (!current) {
+    showToast('⚠️ Lütfen önce bir fotoğraf yükleyin veya seçin.');
+    return;
+  }
+
+  const loading = document.getElementById('loadingOverlay');
+  const loadingText = document.getElementById('loadingText');
+  if (loading) {
+    loading.style.display = 'flex';
+    loadingText.textContent = 'Yüzler yapay zeka ile taranıyor...';
+  }
+
+  // Model hazır değilse yükle
+  if (!state.model) {
+    await loadFaceModel();
+  }
+
+  saveUndoSnapshot('Yüzleri Yeniden Tara');
+
+  // Kullanıcının elle eklediği manuel gizleme alanlarını koru
+  const existingManual = current.faces.filter(f => f.manual);
+
+  // Yüzleri tara (Hassasiyet 0.40)
+  const newDetectedFaces = await detectFacesInImage(current.img, 0.40);
+
+  current.faces = [...newDetectedFaces, ...existingManual];
+  state.selectedFaceIndex = -1;
+  updateSelectedFaceBar();
+  renderThumbnails();
+  renderCurrentCanvas();
+
+  if (loading) loading.style.display = 'none';
+
+  if (navigator.vibrate) navigator.vibrate([40, 30, 40]);
+
+  if (newDetectedFaces.length > 0) {
+    showToast(`✅ Yüz taraması tamamlandı: ${newDetectedFaces.length} yüz bulundu.`, 'Geri Al', undoLastAction);
+  } else {
+    showToast('ℹ️ Fotoğrafta otomatik yüz bulunamadı. "➕ Ekle" butonuyla elle seçebilirsiniz.');
+  }
+}
+
+async function scanFacesAllPhotos() {
+  if (state.images.length === 0) {
+    showToast('⚠️ Taranacak fotoğraf yok.');
+    return;
+  }
+
+  const loading = document.getElementById('loadingOverlay');
+  const loadingText = document.getElementById('loadingText');
+  if (loading) loading.style.display = 'flex';
+
+  if (!state.model) {
+    if (loadingText) loadingText.textContent = 'Yapay zeka modeli hazırlanıyor...';
+    await loadFaceModel();
+  }
+
+  saveUndoSnapshot('Tüm Fotoğraflar Yeniden Tarandı');
+
+  let totalFound = 0;
+  for (let i = 0; i < state.images.length; i++) {
+    const item = state.images[i];
+    if (loadingText) loadingText.textContent = `Yüzler taranıyor (${i + 1}/${state.images.length}): ${item.name}...`;
+
+    const existingManual = item.faces.filter(f => f.manual);
+    const newFaces = await detectFacesInImage(item.img, 0.40);
+    item.faces = [...newFaces, ...existingManual];
+    totalFound += newFaces.length;
+  }
+
+  if (loading) loading.style.display = 'none';
+  renderThumbnails();
+  renderCurrentCanvas();
+  showToast(`✅ Tüm fotoğraflar tarandı: Toplam ${totalFound} yüz tespit edildi.`, 'Geri Al', undoLastAction);
+}
+
+// =============================================================================
+// Dokunmatik Araçlar, Seçim, Çıkarma & Geri Alma Motoru
+// =============================================================================
+
+function setActiveTool(tool) {
+  state.activeTool = tool;
+
+  const btnAdd = document.getElementById('btnToolAdd');
+  const btnRemove = document.getElementById('btnToolRemove');
+  const btnExempt = document.getElementById('btnToolExempt');
+
+  if (btnAdd) btnAdd.classList.toggle('active', tool === 'add');
+  if (btnRemove) btnRemove.classList.toggle('active', tool === 'remove');
+  if (btnExempt) btnExempt.classList.toggle('active', tool === 'exempt');
+
+  const banner = document.getElementById('canvasModeHint');
+  const hintIcon = document.getElementById('hintIcon');
+  const hintText = document.getElementById('hintText');
+
+  if (banner && hintText && hintIcon) {
+    banner.className = `canvas-mode-banner mode-${tool}`;
+    if (tool === 'add') {
+      hintIcon.textContent = '💡';
+      hintText.innerHTML = '<b>Ekleme Modu:</b> Parmağınızla tuval üzerinde sürükleyerek yeni gizleme alanı çizin.';
+    } else if (tool === 'remove') {
+      hintIcon.textContent = '🗑️';
+      hintText.innerHTML = '<b>Çıkarma Modu:</b> Silmek istediğiniz yüzün veya alanın üzerine dokunun.';
+    } else if (tool === 'exempt') {
+      hintIcon.textContent = '🛡️';
+      hintText.innerHTML = '<b>Muafiyet Modu:</b> Öğretmen vb. gizlenmeyecek yüzün üzerine dokunun.';
+    }
+  }
+
+  renderCurrentCanvas();
+}
+
+function saveUndoSnapshot(label = 'İşlem') {
+  const current = state.images[state.currentIndex];
+  if (!current) return;
+
+  state.undoStack.push({
+    imageIndex: state.currentIndex,
+    faces: JSON.parse(JSON.stringify(current.faces)),
+    label: label
+  });
+
+  if (state.undoStack.length > 25) {
+    state.undoStack.shift();
+  }
+
+  updateUndoButtonState();
+}
+
+function undoLastAction() {
+  if (state.undoStack.length === 0) return;
+
+  const snapshot = state.undoStack.pop();
+  if (snapshot && state.images[snapshot.imageIndex]) {
+    state.currentIndex = snapshot.imageIndex;
+    state.images[snapshot.imageIndex].faces = snapshot.faces;
+    state.selectedFaceIndex = -1;
+    updateSelectedFaceBar();
+    updateUndoButtonState();
+    renderCurrentCanvas();
+    showToast(`↩️ "${snapshot.label}" geri alındı.`);
+  }
+}
+
+function updateUndoButtonState() {
+  const btnUndo = document.getElementById('btnUndo');
+  if (btnUndo) {
+    btnUndo.disabled = (state.undoStack.length === 0);
+  }
+}
+
+function deleteFace(index) {
+  const current = state.images[state.currentIndex];
+  if (!current || index < 0 || index >= current.faces.length) return;
+
+  const isManual = current.faces[index].manual;
+  saveUndoSnapshot(isManual ? 'Manuel Alan Silindi' : 'Yüz Silindi');
+
+  current.faces.splice(index, 1);
+  state.selectedFaceIndex = -1;
+  updateSelectedFaceBar();
+
+  if (navigator.vibrate) navigator.vibrate([30, 30]);
+
+  showToast('🗑️ Alan başarıyla çıkarıldı.', 'Geri Al', undoLastAction);
+  renderCurrentCanvas();
+}
+
+function deleteSelectedFace() {
+  if (state.selectedFaceIndex >= 0) {
+    deleteFace(state.selectedFaceIndex);
+  } else {
+    showToast('⚠️ Lütfen önce çıkarılacak bir alana dokunun.');
+  }
+}
+
+function toggleFaceExempt(index) {
+  const current = state.images[state.currentIndex];
+  if (!current || index < 0 || index >= current.faces.length) return;
+
+  saveUndoSnapshot('Muafiyet Değiştirildi');
+  current.faces[index].exempt = !current.faces[index].exempt;
+
+  if (navigator.vibrate) navigator.vibrate(20);
+
+  updateSelectedFaceBar();
+  renderCurrentCanvas();
+
+  const status = current.faces[index].exempt ? '🛡️ Öğretmen muafiyeti verildi (Gizlenmeyecek)' : '👤 Alan gizlenecek şekilde ayarlandı';
+  showToast(status);
+}
+
+function toggleSelectedExempt() {
+  if (state.selectedFaceIndex >= 0) {
+    toggleFaceExempt(state.selectedFaceIndex);
+  }
+}
+
+function selectFace(index) {
+  const current = state.images[state.currentIndex];
+  if (!current || index < 0 || index >= current.faces.length) {
+    deselectFace();
+    return;
+  }
+
+  state.selectedFaceIndex = index;
+  const face = current.faces[index];
+
+  const bar = document.getElementById('selectedFaceBar');
+  const title = document.getElementById('selectedFaceTitle');
+  const badge = document.getElementById('selectedFaceBadge');
+  const exemptLabel = document.getElementById('exemptActionLabel');
+
+  if (bar && title && badge && exemptLabel) {
+    title.textContent = `Alan #${index + 1}`;
+    badge.textContent = face.manual ? 'Manuel Alan' : 'Yapay Zeka';
+    exemptLabel.textContent = face.exempt ? 'Gizle' : 'Muaf Yap';
+    bar.style.display = 'flex';
+  }
+
+  if (navigator.vibrate) navigator.vibrate(15);
+  renderCurrentCanvas();
+}
+
+function deselectFace() {
+  state.selectedFaceIndex = -1;
+  updateSelectedFaceBar();
+  renderCurrentCanvas();
+}
+
+function updateSelectedFaceBar() {
+  const bar = document.getElementById('selectedFaceBar');
+  if (!bar) return;
+
+  if (state.selectedFaceIndex < 0) {
+    bar.style.display = 'none';
+  } else {
+    const current = state.images[state.currentIndex];
+    if (current && current.faces[state.selectedFaceIndex]) {
+      const face = current.faces[state.selectedFaceIndex];
+      const title = document.getElementById('selectedFaceTitle');
+      const badge = document.getElementById('selectedFaceBadge');
+      const exemptLabel = document.getElementById('exemptActionLabel');
+
+      if (title) title.textContent = `Alan #${state.selectedFaceIndex + 1}`;
+      if (badge) badge.textContent = face.manual ? 'Manuel Alan' : 'Yapay Zeka';
+      if (exemptLabel) exemptLabel.textContent = face.exempt ? 'Gizle' : 'Muaf Yap';
+      bar.style.display = 'flex';
+    } else {
+      bar.style.display = 'none';
+    }
+  }
+}
+
+function clearAllManual() {
+  const current = state.images[state.currentIndex];
+  if (!current) return;
+
+  const manualCount = current.faces.filter(f => f.manual).length;
+  if (manualCount === 0) {
+    showToast('Temizlenecek manuel alan yok.');
+    return;
+  }
+
+  saveUndoSnapshot('Tüm Manuel Alanlar Silindi');
+  current.faces = current.faces.filter(f => !f.manual);
+  state.selectedFaceIndex = -1;
+  updateSelectedFaceBar();
+  renderCurrentCanvas();
+  showToast(`↺ ${manualCount} manuel alan temizlendi.`, 'Geri Al', undoLastAction);
+}
+
+function removeImage(index) {
+  if (index < 0 || index >= state.images.length) return;
+
+  state.images.splice(index, 1);
+  if (state.images.length === 0) {
+    resetToUploadScreen();
+    return;
+  }
+
+  if (state.currentIndex >= state.images.length) {
+    state.currentIndex = state.images.length - 1;
+  }
+
+  state.selectedFaceIndex = -1;
+  updateSelectedFaceBar();
+  renderThumbnails();
+  selectImage(state.currentIndex);
+
+  const btnDownloadAll = document.getElementById('btnDownloadAll');
+  if (btnDownloadAll) {
+    btnDownloadAll.style.display = (state.images.length > 1) ? 'inline-flex' : 'none';
+  }
+
+  showToast('Fotoğraf silindi.');
+}
+
+function resetToUploadScreen() {
+  state.images = [];
+  state.currentIndex = 0;
+  state.selectedFaceIndex = -1;
+  state.undoStack = [];
+
+  document.getElementById('uploadDropzone').style.display = 'flex';
+  document.getElementById('canvasWrapper').style.display = 'none';
+  document.getElementById('touchToolbar').style.display = 'none';
+  document.getElementById('selectedFaceBar').style.display = 'none';
+  document.getElementById('canvasModeHint').style.display = 'none';
+  document.getElementById('controlsPanel').style.display = 'none';
+  document.getElementById('bottomActionBar').style.display = 'none';
+  document.getElementById('photoStrip').style.display = 'none';
+
+  // Dosya girişlerini sıfırla
+  const fileInput = document.getElementById('fileInput');
+  const cameraInput = document.getElementById('cameraInput');
+  if (fileInput) fileInput.value = '';
+  if (cameraInput) cameraInput.value = '';
+
+  showToast('Yeni fotoğraflar için karşılama ekranına dönüldü.');
+}
+
+function handleKeyboardShortcuts(e) {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+  if (e.key === 'Delete' || e.key === 'Backspace') {
+    if (state.selectedFaceIndex >= 0) {
+      e.preventDefault();
+      deleteSelectedFace();
+    }
+  } else if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
+    e.preventDefault();
+    undoLastAction();
+  } else if (e.key === 'Escape') {
+    deselectFace();
+  } else if (e.key === '1') {
+    setActiveTool('add');
+  } else if (e.key === '2') {
+    setActiveTool('remove');
+  } else if (e.key === '3') {
+    setActiveTool('exempt');
+  } else if (e.key === 'r' || e.key === 'R') {
+    scanFacesCurrentPhoto();
+  }
+}
+
+function showToast(message, actionLabel = null, actionCallback = null) {
+  const container = document.getElementById('toastContainer');
+  if (!container) return;
+
+  container.innerHTML = '';
+
+  const toast = document.createElement('div');
+  toast.className = 'toast-item';
+
+  const msgSpan = document.createElement('span');
+  msgSpan.className = 'toast-msg';
+  msgSpan.innerHTML = message;
+  toast.appendChild(msgSpan);
+
+  if (actionLabel && actionCallback) {
+    const btn = document.createElement('button');
+    btn.className = 'toast-btn';
+    btn.textContent = actionLabel;
+    btn.onclick = () => {
+      actionCallback();
+      toast.remove();
+    };
+    toast.appendChild(btn);
+  }
+
+  container.appendChild(toast);
+
+  setTimeout(() => {
+    toast.classList.add('fading');
+    setTimeout(() => {
+      if (toast.parentElement) toast.remove();
+    }, 250);
+  }, 3500);
 }
 
 // =============================================================================

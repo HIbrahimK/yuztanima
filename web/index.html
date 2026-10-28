@@ -85,17 +85,79 @@
         <div id="canvasStatsPill" class="canvas-stats-pill">
           <span class="stat-item faces">👤 0 Yüz</span>
         </div>
-
-        <div class="canvas-tools-group">
-          <!-- Yeni Fotoğraf Ekleme Butonu -->
-          <label class="canvas-btn" title="Yeni Fotoğraf Ekle">
-            ➕
-            <input type="file" accept="image/*" multiple style="display: none;" onchange="handleFiles(event)">
-          </label>
+        <div id="canvasQuickActions" class="canvas-quick-actions">
+          <button id="btnScanFacesCanvas" class="canvas-mini-btn scan" title="Fotoğraftaki yüzleri yapay zeka ile yeniden tara">
+            🔍 Yüz Tanı
+          </button>
+          <button id="btnClearManual" class="canvas-mini-btn danger" title="Eklenen tüm manuel alanları temizle">
+            ↺ Temizle
+          </button>
         </div>
       </div>
+    </div>
 
-      <div class="canvas-hint">💡 Yüze dokun: Öğretmen Muafiyeti | Sürükle: Manuel Alan Ekle</div>
+    <!-- Mobil & Dokunmatik Hızlı Araç Çubuğu (Ekle / Çıkar / Muafiyet / Geri Al / Yüz Tanı) -->
+    <div id="touchToolbar" class="touch-toolbar">
+      <div class="tool-segment">
+        <button id="btnToolAdd" class="tool-btn active" title="Yeni Gizleme Alanı Ekle (Sürükle-Çiz)">
+          <span class="tool-icon">➕</span>
+          <span class="tool-label">Ekle</span>
+        </button>
+        <button id="btnToolRemove" class="tool-btn danger" title="Yüzü veya Seçili Alanı Çıkar / Sil">
+          <span class="tool-icon">🗑️</span>
+          <span class="tool-label">Çıkar</span>
+        </button>
+        <button id="btnToolExempt" class="tool-btn" title="Öğretmen / Muafiyet Modu">
+          <span class="tool-icon">🛡️</span>
+          <span class="tool-label">Muafiyet</span>
+        </button>
+      </div>
+
+      <div class="tool-actions-group">
+        <button id="btnScanFaces" class="tool-btn action-btn scan-btn" title="Yüz Tanıma: Bu fotoğraftaki yüzleri yapay zeka ile tara">
+          <span class="tool-icon">🔍</span>
+          <span class="tool-label">Yüz Tanı</span>
+        </button>
+        <button id="btnUndo" class="tool-btn action-btn" title="Son İşlemi Geri Al" disabled>
+          <span class="tool-icon">↩️</span>
+          <span class="tool-label">Geri Al</span>
+        </button>
+        <label class="tool-btn action-btn upload-more" title="Yeni Fotoğraf Ekle">
+          <span class="tool-icon">🖼️</span>
+          <span class="tool-label">+Foto</span>
+          <input type="file" accept="image/*" multiple style="display: none;" onchange="handleFiles(event)">
+        </label>
+      </div>
+    </div>
+
+    <!-- Seçili Alan Bağlamsal Eylem Çubuğu (Dokununca Açılır) -->
+    <div id="selectedFaceBar" class="selected-face-bar" style="display: none;">
+      <div class="selected-face-info">
+        <span class="selection-pulse-dot"></span>
+        <div class="selected-face-texts">
+          <span id="selectedFaceTitle" class="selected-face-title">Seçili Alan</span>
+          <span id="selectedFaceBadge" class="selected-face-badge">Yapay Zeka</span>
+        </div>
+      </div>
+      <div class="selected-face-actions">
+        <button id="btnDeleteSelectedFace" class="btn-face-action delete" title="Bu Alanı Çıkar">
+          <span class="action-icon">🗑️</span>
+          <span>Çıkar</span>
+        </button>
+        <button id="btnToggleSelectedExempt" class="btn-face-action exempt" title="Muafiyet Durumunu Değiştir">
+          <span class="action-icon">🛡️</span>
+          <span id="exemptActionLabel">Muaf Yap</span>
+        </button>
+        <button id="btnDeselectFace" class="btn-face-action close" title="Seçimi Kaldır">
+          ✕
+        </button>
+      </div>
+    </div>
+
+    <!-- Dokunmatik Mod & İpucu Banner'ı -->
+    <div id="canvasModeHint" class="canvas-mode-banner mode-add">
+      <span class="hint-icon" id="hintIcon">💡</span>
+      <span class="hint-text" id="hintText"><b>Ekleme Modu:</b> Parmağınızla tuval üzerinde sürükleyerek yeni gizleme alanı çizin.</span>
     </div>
 
     <!-- 4. Kontroller & Şablonlar Paneli (Tabs) -->
@@ -173,6 +235,19 @@
             <div class="emoji-choice" data-emoji="star.png"><img src="emojis/star.png" alt="star"></div>
           </div>
         </div>
+
+        <!-- Yüz Tanıma & Yeniden Tarama Grubu -->
+        <div class="setting-group" style="margin-top: 6px; padding-top: 12px; border-top: 1px solid var(--border-glass);">
+          <span class="setting-label">Yapay Zeka Yüz Taraması (Yüz Tanı)</span>
+          <div style="display: flex; gap: 8px;">
+            <button id="btnScanCurrentTab" class="btn-picker" style="flex: 1; justify-content: center; font-size: 0.82rem; padding: 10px 8px;">
+              🔍 Bu Fotoğrafı Tara
+            </button>
+            <button id="btnScanAllTab" class="btn-picker" style="flex: 1; justify-content: center; font-size: 0.82rem; padding: 10px 8px;">
+              👥 Tümünü Tara
+            </button>
+          </div>
+        </div>
       </div>
 
       <!-- Sekme 2: MEB & Sosyal Medya Şablonları -->
@@ -238,16 +313,22 @@
 
   <!-- Sabit Alt Eylem Çubuğu (Bottom Action Bar) -->
   <div id="bottomActionBar" class="bottom-action-bar" style="display: none;">
+    <button id="btnResetPhotos" class="btn-action reset" title="Başa Dön / Yeni Fotoğraflar">
+      🔄
+    </button>
     <button id="btnDownloadCurrent" class="btn-action download">
       💾 İndir
     </button>
-    <button id="btnDownloadAll" class="btn-action download" style="display: none; background: linear-gradient(135deg, #3b82f6, #6366f1);">
+    <button id="btnDownloadAll" class="btn-action download batch" style="display: none;">
       📦 Toplu (.ZIP)
     </button>
     <button id="btnShare" class="btn-action share" title="Paylaş (WhatsApp, Instagram)">
       📤
     </button>
   </div>
+
+  <!-- Toast Bildirimleri (Geri Al & Bilgilendirme) -->
+  <div id="toastContainer" class="toast-container"></div>
 
   <!-- Yükleniyor / İşleniyor Katmanı -->
   <div id="loadingOverlay" class="loading-overlay">
