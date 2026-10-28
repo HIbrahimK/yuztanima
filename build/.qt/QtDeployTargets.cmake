@@ -1,0 +1,5 @@
+set(__QT_DEPLOY_TARGETS "YuzGizle;test_core")
+set(__QT_DEPLOY_TARGET_YuzGizle_FILE /home/halil/Masaüstü/yuztanima/build/bin/YuzGizle)
+set(__QT_DEPLOY_TARGET_YuzGizle_TYPE EXECUTABLE)
+set(__QT_DEPLOY_TARGET_test_core_FILE /home/halil/Masaüstü/yuztanima/build/bin/test_core)
+set(__QT_DEPLOY_TARGET_test_core_TYPE EXECUTABLE)

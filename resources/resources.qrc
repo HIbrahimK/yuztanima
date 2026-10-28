@@ -1,0 +1,11 @@
+<RCC>
+    <qresource prefix="/">
+        <file>icons/app_icon.png</file>
+        <file>emojis/smile.png</file>
+        <file>emojis/cool.png</file>
+        <file>emojis/slight_smile.png</file>
+        <file>emojis/grin.png</file>
+        <file>emojis/star.png</file>
+        <file>emojis/mask.png</file>
+    </qresource>
+</RCC>

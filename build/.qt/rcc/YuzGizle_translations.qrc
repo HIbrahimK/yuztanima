@@ -1,0 +1,7 @@
+<RCC>
+  <qresource prefix="/i18n">
+    <file alias="yuzgizle_tr.qm">/home/halil/Masaüstü/yuztanima/build/src/yuzgizle_tr.qm</file>
+    <file alias="yuzgizle_en.qm">/home/halil/Masaüstü/yuztanima/build/src/yuzgizle_en.qm</file>
+  </qresource>
+</RCC>
+

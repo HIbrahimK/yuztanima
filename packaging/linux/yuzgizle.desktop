@@ -1,0 +1,13 @@
+[Desktop Entry]
+Name=YüzGizle
+Name[tr]=YüzGizle
+Comment=MEB KVKK Uyumlu Fotoğraf Yüz Gizleme Uygulaması
+Comment[tr]=MEB KVKK Uyumlu Fotoğraf Yüz Gizleme Uygulaması
+Comment[en]=MEB GDPR/KVKK Compliant Face Blur and Privacy Tool
+Exec=YuzGizle %F
+Icon=yuzgizle
+Terminal=false
+Type=Application
+Categories=Graphics;Photography;Utility;Qt;
+MimeType=image/jpeg;image/png;image/bmp;image/webp;image/tiff;
+StartupNotify=true
