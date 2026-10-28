@@ -32,10 +32,16 @@
 
 | İşletim Sistemi | Paket Formatı | İndirme Bağlantısı | Durum |
 | :--- | :--- | :--- | :--- |
+| 📱 **Web & Mobil (PWA)** | Kurulumsuz / Tarayıcı | [🌐 **Canlı Web Uygulamasını Aç**](https://HIbrahimK.github.io/yuztanima/) | 🟢 **Yayında (Android, iPhone, PC)** |
 | 🪟 **Windows 10 / 11 (64-bit)** | Taşınabilir (.zip) | [📦 **YuzGizle-v1.0.0-Windows-x64.zip**](https://github.com/HIbrahimK/yuztanima/releases/latest) | 🟢 **Hazır (Taşınabilir / Kurulumsuz)** |
 | 🐧 **Linux (Tüm Dağıtımlar)** | Taşınabilir (.tar.gz) | [📦 **YuzGizle-v1.0.0-Linux-x86_64.tar.gz**](https://github.com/HIbrahimK/yuztanima/releases/latest) | 🟢 **Hazır (Taşınabilir / Kurulumsuz)** |
 
-### ⚡ 3 Adımda Kolay Kurulum ve Çalıştırma:
+### ⚡ Kolay Kullanım Rehberi:
+
+#### 📱 Mobil ve Web (Android & iPhone) Kullanıcıları İçin:
+1. **Açın:** [Canlı Web Sürümü](https://HIbrahimK.github.io/yuztanima/) bağlantısına telefonunuzdan tıklayın.
+2. **Kullanın:** Fotoğrafı galeriden seçin veya kameradan çekin; yüzler anında cihazınızda gizlenir.
+3. **Uygulama Olarak Ekleyin:** Tarayıcı menüsünden *"Ana Ekrana Ekle"* diyerek tıpkı bir mobil uygulama gibi kullanabilirsiniz.
 
 #### 🪟 Windows Kullanıcıları İçin:
 1. **İndirin:** [GitHub Releases](https://github.com/HIbrahimK/yuztanima/releases/latest) sayfasından `YuzGizle-v1.0.0-Windows-x64.zip` dosyasını indirin.

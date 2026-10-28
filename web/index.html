@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>YüzGizle — MEB KVKK Uyumlu Fotoğraf Yüz Gizleme</title>
+  <meta name="description" content="MEB okulları web siteleri, e-Okul ve sosyal medya için tarayıcıda çevrimdışı ve güvenli çalışan yapay zeka yüz gizleme uygulaması.">
+  
+  <!-- PWA & Mobil Uyumluluk -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#090d16">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+
+  <!-- Tipografi (Google Fonts) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- CSS -->
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- Arka Plan Işık Efekti -->
+  <div class="bg-glow-1"></div>
+
+  <!-- Üst Başlık (Header) -->
+  <header class="app-header">
+    <div class="brand">
+      <img src="icons/icon-192.png" alt="YüzGizle Logo" class="brand-icon">
+      <div>
+        <div class="brand-title">YüzGizle</div>
+      </div>
+      <span class="brand-badge">MEB</span>
+    </div>
+
+    <div class="header-actions">
+      <button id="btnInstallPwa" class="btn-pwa-install" title="Telefona veya Masaüstüne Kur">
+        📲 Yükle
+      </button>
+      <div class="kvkk-badge" title="Fotoğraflar hiçbir sunucuya yüklenmez, telefonunuzda işlenir.">
+        🔒 KVKK Güvenli
+      </div>
+    </div>
+  </header>
+
+  <!-- Ana Çalışma Alanı -->
+  <main class="main-container">
+
+    <!-- 1. Fotoğraf Yükleme / Karşılama Alanı -->
+    <div id="uploadDropzone" class="upload-dropzone">
+      <div class="upload-icon-circle">📸</div>
+      <h2 class="upload-title">Fotoğraf Seçin veya Çekin</h2>
+      <p class="upload-subtitle">
+        Öğrenci yüzleri yapay zeka ile otomatik algılanır. Fotoğraflarınız <b>asla internete yüklenmez</b>, telefonunuzda işlenir.
+      </p>
+
+      <div class="upload-btn-group">
+        <!-- Kamera Girişi -->
+        <label class="btn-picker primary">
+          📷 Kameradan Çek
+          <input type="file" id="cameraInput" accept="image/*" capture="environment" style="display: none;">
+        </label>
+
+        <!-- Galeri Girişi (Çoklu Seçim) -->
+        <label class="btn-picker">
+          🖼️ Galeriden Seç
+          <input type="file" id="fileInput" accept="image/*" multiple style="display: none;">
+        </label>
+      </div>
+    </div>
+
+    <!-- 2. Çoklu Fotoğraf Şeridi (Thumbnails) -->
+    <div id="photoStrip" class="photo-strip"></div>
+
+    <!-- 3. Canlı Tuval & Önizleme Alanı -->
+    <div id="canvasWrapper" class="canvas-wrapper">
+      <canvas id="previewCanvas"></canvas>
+
+      <!-- Tuval Üstü Durum Barı -->
+      <div class="canvas-overlay-bar">
+        <div id="canvasStatsPill" class="canvas-stats-pill">
+          <span class="stat-item faces">👤 0 Yüz</span>
+        </div>
+
+        <div class="canvas-tools-group">
+          <!-- Yeni Fotoğraf Ekleme Butonu -->
+          <label class="canvas-btn" title="Yeni Fotoğraf Ekle">
+            ➕
+            <input type="file" accept="image/*" multiple style="display: none;" onchange="handleFiles(event)">
+          </label>
+        </div>
+      </div>
+
+      <div class="canvas-hint">💡 Yüze dokun: Öğretmen Muafiyeti | Sürükle: Manuel Alan Ekle</div>
+    </div>
+
+    <!-- 4. Kontroller & Şablonlar Paneli (Tabs) -->
+    <div id="controlsPanel" class="controls-panel">
+      <!-- Sekme Başlıkları -->
+      <div class="tab-nav">
+        <button class="tab-btn active" data-tab="tabMethod">
+          <span>🎭</span>
+          <span>Gizleme</span>
+        </button>
+        <button class="tab-btn" data-tab="tabPreset">
+          <span>📐</span>
+          <span>MEB Boyut</span>
+        </button>
+        <button class="tab-btn" data-tab="tabWatermark">
+          <span>🏫</span>
+          <span>Logo & Metin</span>
+        </button>
+      </div>
+
+      <!-- Sekme 1: Gizleme Yöntemi -->
+      <div id="tabMethod" class="tab-content active">
+        <div class="setting-group">
+          <span class="setting-label">Gizleme Efekti</span>
+          <div class="method-grid">
+            <div class="choice-card selected" data-method="blur">
+              <span class="choice-icon">🌫️</span>
+              <span class="choice-title">Bulanık</span>
+              <span class="choice-desc">Gaussian Blur</span>
+            </div>
+            <div class="choice-card" data-method="pixelate">
+              <span class="choice-icon">🔲</span>
+              <span class="choice-title">Mozaik</span>
+              <span class="choice-desc">Pixelate</span>
+            </div>
+            <div class="choice-card" data-method="emoji">
+              <span class="choice-icon">😊</span>
+              <span class="choice-title">Emoji</span>
+              <span class="choice-desc">Sevimli Maske</span>
+            </div>
+            <div class="choice-card" data-method="blackbar">
+              <span class="choice-icon">⬛</span>
+              <span class="choice-title">Siyah Bant</span>
+              <span class="choice-desc">Göz Bandı</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Blur Gücü Slider -->
+        <div id="blurSettings" class="setting-group">
+          <div class="setting-label">
+            <span>Bulanıklık Gücü</span>
+            <span id="blurVal">30</span>
+          </div>
+          <input type="range" id="blurSlider" class="range-slider" min="10" max="60" value="30">
+        </div>
+
+        <!-- Pixelate Blok Boyutu Slider -->
+        <div id="pixelSettings" class="setting-group" style="display: none;">
+          <div class="setting-label">
+            <span>Mozaik Boyutu</span>
+            <span id="pixelVal">18</span>
+          </div>
+          <input type="range" id="pixelSlider" class="range-slider" min="8" max="40" value="18">
+        </div>
+
+        <!-- Emoji Seçici -->
+        <div id="emojiSettings" class="setting-group" style="display: none;">
+          <span class="setting-label">Emoji Seçin</span>
+          <div class="emoji-selector">
+            <div class="emoji-choice selected" data-emoji="smile.png"><img src="emojis/smile.png" alt="smile"></div>
+            <div class="emoji-choice" data-emoji="cool.png"><img src="emojis/cool.png" alt="cool"></div>
+            <div class="emoji-choice" data-emoji="grin.png"><img src="emojis/grin.png" alt="grin"></div>
+            <div class="emoji-choice" data-emoji="mask.png"><img src="emojis/mask.png" alt="mask"></div>
+            <div class="emoji-choice" data-emoji="star.png"><img src="emojis/star.png" alt="star"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sekme 2: MEB & Sosyal Medya Şablonları -->
+      <div id="tabPreset" class="tab-content">
+        <div class="setting-group">
+          <span class="setting-label">Resmi Standart Boyut</span>
+          <div class="preset-grid">
+            <div class="choice-card selected" data-preset="meb_manset">
+              <span class="choice-icon">📰</span>
+              <span class="choice-title">MEB Manşet</span>
+              <span class="choice-desc">1200×568 (19:9)</span>
+            </div>
+            <div class="choice-card" data-preset="eokul">
+              <span class="choice-icon">📝</span>
+              <span class="choice-title">e-Okul</span>
+              <span class="choice-desc">133×171 (&lt; 20 KB)</span>
+            </div>
+            <div class="choice-card" data-preset="mebbis">
+              <span class="choice-icon">🪪</span>
+              <span class="choice-title">MEBBİS</span>
+              <span class="choice-desc">394×512 Vesikalık</span>
+            </div>
+            <div class="choice-card" data-preset="insta_square">
+              <span class="choice-icon">📷</span>
+              <span class="choice-title">Instagram Kare</span>
+              <span class="choice-desc">1080×1080 (1:1)</span>
+            </div>
+            <div class="choice-card" data-preset="insta_story">
+              <span class="choice-icon">🎬</span>
+              <span class="choice-title">Hikaye / Reels</span>
+              <span class="choice-desc">1080×1920 (9:16)</span>
+            </div>
+            <div class="choice-card" data-preset="original">
+              <span class="choice-icon">📐</span>
+              <span class="choice-title">Orijinal Boyut</span>
+              <span class="choice-desc">Değiştirme</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sekme 3: Okul Logosu ve Filigran -->
+      <div id="tabWatermark" class="tab-content">
+        <div class="setting-group">
+          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+            <input type="checkbox" id="chkWatermark">
+            <span style="font-weight: 700; font-size: 0.9rem;">Metin Filigranı Ekle</span>
+          </label>
+          <input type="text" id="txtWatermark" class="text-input" value="T.C. Millî Eğitim Bakanlığı" placeholder="Okulunuzun adı veya MEB">
+        </div>
+
+        <div class="setting-group" style="margin-top: 8px;">
+          <span class="setting-label">Şeffaf Okul Logosu (PNG)</span>
+          <label class="btn-picker" style="justify-content: center;">
+            📁 Okul Logosu Seç
+            <input type="file" id="logoInput" accept="image/png" style="display: none;">
+          </label>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Sabit Alt Eylem Çubuğu (Bottom Action Bar) -->
+  <div id="bottomActionBar" class="bottom-action-bar" style="display: none;">
+    <button id="btnDownloadCurrent" class="btn-action download">
+      💾 İndir
+    </button>
+    <button id="btnDownloadAll" class="btn-action download" style="display: none; background: linear-gradient(135deg, #3b82f6, #6366f1);">
+      📦 Toplu (.ZIP)
+    </button>
+    <button id="btnShare" class="btn-action share" title="Paylaş (WhatsApp, Instagram)">
+      📤
+    </button>
+  </div>
+
+  <!-- Yükleniyor / İşleniyor Katmanı -->
+  <div id="loadingOverlay" class="loading-overlay">
+    <div class="spinner"></div>
+    <div id="loadingText" class="loading-text">Yükleniyor...</div>
+  </div>
+
+  <!-- Kütüphaneler (Yerel & Çevrimdışı Uyumlu) -->
+  <script src="js/tf.min.js"></script>
+  <script src="js/blazeface.min.js"></script>
+  <script src="js/jszip.min.js"></script>
+
+  <!-- Ana Uygulama Mantığı -->
+  <script src="js/app.js"></script>
+
+</body>
+</html>

@@ -21,6 +21,10 @@ lib/
 __pycache__/
 *.pyc
 
+# Test çıktıları
+tests/**/output/
+tests/gercekresimler/
+
 # OS
 .DS_Store
 Thumbs.db
