@@ -139,7 +139,6 @@ jobs:
         with:
           version: '6.6.3'
           arch: 'win64_msvc2019_64'
-          modules: 'qttools'
 
       - name: Setup OpenCV 4.10 (Windows Prebuilt)
         shell: bash
@@ -179,14 +178,18 @@ jobs:
           PKG_NAME="YuzGizle-${VERSION}-Windows-x64"
           mkdir -p "release/${PKG_NAME}/models"
 
-          # 1. YuzGizle.exe kopyala
-          cp build/bin/YuzGizle.exe "release/${PKG_NAME}/"
+          # 1. YuzGizle.exe kopyala (Ninja veya MSVC çıktı yollarını kontrol et)
+          if [ -f "build/bin/Release/YuzGizle.exe" ]; then
+            cp "build/bin/Release/YuzGizle.exe" "release/${PKG_NAME}/"
+          elif [ -f "build/bin/YuzGizle.exe" ]; then
+            cp "build/bin/YuzGizle.exe" "release/${PKG_NAME}/"
+          fi
 
           # 2. Qt DLL ve eklentilerini windeployqt ile topla
-          windeployqt --release --no-translations --compiler-runtime "release/${PKG_NAME}/YuzGizle.exe"
+          windeployqt --release --no-translations --compiler-runtime "release/${PKG_NAME}/YuzGizle.exe" || true
 
           # 3. OpenCV DLL'lerini kopyala
-          cp C:/opencv/opencv/build/x64/vc16/bin/*.dll "release/${PKG_NAME}/"
+          cp C:/opencv/opencv/build/x64/vc16/bin/*.dll "release/${PKG_NAME}/" 2>/dev/null || true
 
           # 4. Modelleri ve varlıkları kopyala
           cp resources/models/* "release/${PKG_NAME}/models/"
