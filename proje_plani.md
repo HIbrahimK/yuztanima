@@ -832,18 +832,18 @@ xcopy resources\models build\Release\models\ /s
 makensis packaging/windows/installer.nsi
 ```
 
-### 12.3 Linux Dağıtım
+### 12.3 Linux Dağıtım (Portable Bundle & GitHub Releases)
 
 ```bash
-# Build
-cmake -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j$(nproc)
+# 1. Otomatik Taşınabilir (Portable) Paket Oluşturma:
+chmod +x scripts/package_release.sh
+./scripts/package_release.sh
 
-# AppImage oluşturma
-linuxdeployqt build/YuzGizle -appimage
+# Oluşan çıktı: release/YuzGizle-v1.0.0-Linux-x86_64.tar.gz (~524 KB)
+# İçerik: YuzGizle (stripped), models/ (YuNet ONNX + Haar), baslat.sh, yuzgizle.desktop, KULLANIM_KILAVUZU.txt
 
-# Alternatif: .deb paketi
-dpkg-buildpackage -b -us -uc
+# 2. GitHub Actions CI/CD (.github/workflows/release.yml):
+# Her yeni tag (v*) basıldığında otomatik olarak Ubuntu üzerinde derlenir ve GitHub Release sayfasına yüklenir.
 ```
 
 ### 12.4 Gerekli Sistem Gereksinimleri
