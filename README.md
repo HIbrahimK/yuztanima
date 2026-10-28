@@ -17,6 +17,29 @@
   <b>Millî Eğitim Bakanlığı (MEB)</b> okullarının web sitelerine (<code>*.meb.k12.tr</code>), <b>MEBBİS / e-Okul</b> sistemlerine ve sosyal medya hesaplarına yüklenecek etkinlik fotoğraflarında öğrenci yüzlerini <b>6698 sayılı Kişisel Verilerin Korunması Kanunu (KVKK)</b> kapsamında yapay zeka ile otomatik, toplu ve güvenli olarak anonimleştiren, okul logosu ve filigran ekleyen profesyonel masaüstü uygulamasıdır.
 </p>
 
+<p align="center">
+  <a href="https://github.com/HIbrahimK/yuztanima/releases/latest"><img src="https://img.shields.io/github/v/release/HIbrahimK/yuztanima?style=for-the-badge&logo=github&color=blue&label=Son%20S%C3%BCr%C3%BCm" alt="Son Sürüm"></a>
+  <a href="https://github.com/HIbrahimK/yuztanima/releases"><img src="https://img.shields.io/badge/%F0%9F%93%A6%20Do%C4%9Frudan%20%C4%B0ndir-Releases-success?style=for-the-badge" alt="İndir"></a>
+</p>
+
+---
+
+## 📥 Hazır Sürümü İndir (Releases — Derleme / Kod Gerektirmez)
+
+> [!TIP]
+> **Öğretmenler, İdareciler ve Son Kullanıcılar İçin:**
+> Uygulamayı çalıştırmak için **kaynak kodları indirmenize, terminal kullanmanıza veya derleme yapmanıza kesinlikle gerek yoktur.** Aşağıdaki tablodan işletim sisteminize uygun hazır paketi indirip hemen kullanabilirsiniz.
+
+| İşletim Sistemi | Paket Formatı | İndirme Bağlantısı | Boyut | Durum |
+| :--- | :--- | :--- | :--- | :--- |
+| 🐧 **Linux (Tüm Dağıtımlar)** | Taşınabilir (Portable .tar.gz) | [📦 **YuzGizle-v1.0.0-Linux-x86_64.tar.gz**](https://github.com/HIbrahimK/yuztanima/releases/latest) | ~524 KB | 🟢 **Yayında** |
+| 🪟 **Windows 10 / 11 (64-bit)** | Taşınabilir (.zip) | [📦 **YuzGizle-v1.0.0-Windows-x64.zip**](https://github.com/HIbrahimK/yuztanima/releases/latest) | Yakında | 🟡 **Hazırlanıyor** |
+
+### ⚡ 3 Adımda Kolay Kurulum ve Çalıştırma:
+1. **İndirin:** Yukarıdaki tablodan veya [GitHub Releases](https://github.com/HIbrahimK/yuztanima/releases/latest) sayfasından `YuzGizle-v1.0.0-Linux-x86_64.tar.gz` dosyasını bilgisayarınıza indirin.
+2. **Arşivden Çıkartın:** İndirilen dosyaya sağ tıklayın ve **"Buraya Çıkart"** (Extract Here) seçeneğini seçin.
+3. **Çift Tıklayıp Başlatın:** Klasörün içindeki **`baslat.sh`** dosyasına çift tıklayın! (Gerekirse terminalden `./baslat.sh` ile çalıştırabilirsiniz).
+
 ---
 
 ## 🎬 Canlı Kullanım Demosu (Önizleme Videosu)

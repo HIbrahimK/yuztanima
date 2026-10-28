@@ -1,0 +1,26 @@
+# Derleme ve Geçici Dizinler
+build/
+build_release/
+release/
+bin/
+lib/
+*.o
+*.a
+*.so
+
+# IDE ve Editör Dosyaları
+.vscode/
+.idea/
+*.user
+*.user.*
+*.autosave
+.directory
+*~
+
+# Python
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store
+Thumbs.db

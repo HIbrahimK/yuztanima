@@ -1,0 +1,123 @@
+name: Release Build & Publish
+
+on:
+  push:
+    tags:
+      - 'v*'
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # =========================================================================
+  # 1. Linux x86_64 Derleme ve Paketleme
+  # =========================================================================
+  build-linux:
+    name: Build Linux Portable & Deb
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            ninja-build \
+            libopencv-dev \
+            libopencv-contrib-dev \
+            qt6-base-dev \
+            qt6-tools-dev \
+            qt6-l10n-tools \
+            libqt6widgets6 \
+            libgl1-mesa-dev
+
+      - name: Download AI Models
+        run: |
+          chmod +x scripts/download_models.sh
+          ./scripts/download_models.sh
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTS=OFF
+
+      - name: Build Application
+        run: cmake --build build --target YuzGizle
+
+      - name: Package Standalone Linux Bundle
+        run: |
+          VERSION="${GITHUB_REF_NAME:-v1.0.0}"
+          PKG_NAME="YuzGizle-${VERSION}-Linux-x86_64"
+          mkdir -p "release/${PKG_NAME}/models"
+          
+          # Binary optimize
+          cp build/bin/YuzGizle "release/${PKG_NAME}/"
+          strip --strip-unneeded "release/${PKG_NAME}/YuzGizle" 2>/dev/null || true
+          
+          # Modeller ve varlıklar
+          cp resources/models/* "release/${PKG_NAME}/models/"
+          cp resources/icons/app_icon.png "release/${PKG_NAME}/"
+          cp packaging/linux/yuzgizle.desktop "release/${PKG_NAME}/"
+          
+          # Başlatıcı betik
+          cat << 'EOF' > "release/${PKG_NAME}/baslat.sh"
+          #!/bin/bash
+          DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+          cd "$DIR"
+          exec ./YuzGizle "$@"
+          EOF
+          chmod +x "release/${PKG_NAME}/baslat.sh"
+          chmod +x "release/${PKG_NAME}/YuzGizle"
+
+          # Kullanım Kılavuzu
+          cat << 'EOF' > "release/${PKG_NAME}/KULLANIM_KILAVUZU.txt"
+          ==================================================================
+            YüzGizle — MEB KVKK Uyumlu Fotoğraf Yüz Gizleme
+          ==================================================================
+
+          Bu paket, kaynak kodları derlemeye ihtiyaç duymadan doğrudan 
+          çalıştırılabilen taşınabilir (portable) sürümdür.
+
+          NASIL ÇALIŞTIRILIR?
+          -------------------
+          1. "baslat.sh" dosyasına çift tıklayarak veya terminalden:
+               ./baslat.sh
+             komutunu vererek uygulamayı hemen açabilirsiniz.
+
+          2. Eğer masaüstü menüsüne eklemek isterseniz:
+               cp yuzgizle.desktop ~/.local/share/applications/
+
+          ÖZELLİKLER:
+          -----------
+          - MEB Web Siteleri için Manşet Şablonu (1200x568 px - 19:9)
+          - e-Okul Standart Şablonu (133x171 px, < 20 KB JPEG)
+          - MEBBİS Vesikalık Şablonu (394x512 px)
+          - Instagram Kare (1080x1080), Dikey (1080x1350) ve Reels (1080x1920)
+          - Okul Logosu ve Hazır Metin Filigranı Ekleme
+          - YuNet yapay zeka ile otomatik yüz tespiti ve öğretmen muafiyeti
+
+          Destek & İletişim: https://github.com/HIbrahimK/yuztanima
+          EOF
+
+          # Arşivleme
+          cd release
+          tar -czf "${PKG_NAME}.tar.gz" "${PKG_NAME}"
+          sha256sum "${PKG_NAME}.tar.gz" > "${PKG_NAME}.tar.gz.sha256"
+
+      - name: Upload Linux Release Asset
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'release'
+        with:
+          files: |
+            release/*.tar.gz
+            release/*.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
