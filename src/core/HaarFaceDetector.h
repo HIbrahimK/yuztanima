@@ -2,8 +2,11 @@
 #define HAAR_FACE_DETECTOR_H
 
 #include "FaceDetector.h"
+#include <opencv2/core/version.hpp>
 #include <opencv2/objdetect.hpp>
+#if __has_include(<opencv2/xobjdetect.hpp>)
 #include <opencv2/xobjdetect.hpp>
+#endif
 #include <QString>
 
 /**

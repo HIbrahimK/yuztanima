@@ -121,3 +121,112 @@ jobs:
             release/*.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # =========================================================================
+  # 2. Windows x64 Derleme ve Paketleme (Portable Zip)
+  # =========================================================================
+  build-windows:
+    name: Build Windows x64 Portable
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Qt 6
+        uses: jurplel/install-qt-action@v3
+        with:
+          version: '6.6.3'
+          arch: 'win64_msvc2019_64'
+          modules: 'qttools'
+
+      - name: Setup OpenCV 4.10 (Windows Prebuilt)
+        shell: bash
+        run: |
+          echo "OpenCV 4.10.0 Windows paketi indiriliyor..."
+          curl -sL "https://github.com/opencv/opencv/releases/download/4.10.0/opencv-4.10.0-windows.exe" -o opencv.exe
+          7z x opencv.exe -y -o"C:/opencv" > /dev/null
+          echo "OpenCV başarıyla C:/opencv/opencv/build dizinine açıldı."
+
+      - name: Download AI Models
+        shell: bash
+        run: |
+          mkdir -p resources/models
+          curl -L -o resources/models/face_detection_yunet_2023mar.onnx "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx"
+          curl -L -o resources/models/haarcascade_frontalface_default.xml "https://raw.githubusercontent.com/opencv/opencv/master/data/haarcascades/haarcascade_frontalface_default.xml"
+
+      - name: Setup MSVC Compiler
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Configure CMake
+        shell: bash
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTS=OFF \
+            -DOpenCV_DIR="C:/opencv/opencv/build"
+
+      - name: Build Application
+        shell: bash
+        run: cmake --build build --config Release --target YuzGizle
+
+      - name: Package Windows Portable Bundle
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME:-v1.0.0}"
+          PKG_NAME="YuzGizle-${VERSION}-Windows-x64"
+          mkdir -p "release/${PKG_NAME}/models"
+
+          # 1. YuzGizle.exe kopyala
+          cp build/bin/YuzGizle.exe "release/${PKG_NAME}/"
+
+          # 2. Qt DLL ve eklentilerini windeployqt ile topla
+          windeployqt --release --no-translations --compiler-runtime "release/${PKG_NAME}/YuzGizle.exe"
+
+          # 3. OpenCV DLL'lerini kopyala
+          cp C:/opencv/opencv/build/x64/vc16/bin/*.dll "release/${PKG_NAME}/"
+
+          # 4. Modelleri ve varlıkları kopyala
+          cp resources/models/* "release/${PKG_NAME}/models/"
+          cp resources/icons/app_icon.png "release/${PKG_NAME}/"
+
+          # 5. Kullanım Kılavuzu
+          cat << 'EOF' > "release/${PKG_NAME}/KULLANIM_KILAVUZU.txt"
+          ==================================================================
+            YüzGizle — MEB KVKK Uyumlu Fotoğraf Yüz Gizleme (Windows)
+          ==================================================================
+
+          Bu sürüm, herhangi bir kurulum veya derleme gerektirmeyen 
+          taşınabilir (portable) sürümdür.
+
+          NASIL ÇALIŞTIRILIR?
+          -------------------
+          Klasör içerisindeki "YuzGizle.exe" dosyasına çift tıklayarak 
+          uygulamayı hemen başlatabilirsiniz.
+
+          ÖZELLİKLER:
+          -----------
+          - MEB Web Siteleri için Manşet Şablonu (1200x568 px - 19:9)
+          - e-Okul Standart Şablonu (133x171 px, < 20 KB JPEG)
+          - MEBBİS Vesikalık Şablonu (394x512 px)
+          - Instagram Kare, Dikey ve Hikaye / Reels Boyutları
+          - Okul Logosu ve Hazır Metin Filigranı Ekleme
+          - YuNet Yapay Zeka ile Otomatik Yüz Tanıma & Öğretmen Muafiyeti
+
+          Destek & İletişim: https://github.com/HIbrahimK/yuztanima
+          EOF
+
+          # 6. Zip arşivi oluştur
+          cd release
+          7z a -tzip "${PKG_NAME}.zip" "${PKG_NAME}"
+          sha256sum "${PKG_NAME}.zip" > "${PKG_NAME}.zip.sha256"
+
+      - name: Upload Windows Release Asset
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'release'
+        with:
+          files: |
+            release/*.zip
+            release/*.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

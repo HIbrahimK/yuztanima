@@ -30,15 +30,22 @@
 > **Öğretmenler, İdareciler ve Son Kullanıcılar İçin:**
 > Uygulamayı çalıştırmak için **kaynak kodları indirmenize, terminal kullanmanıza veya derleme yapmanıza kesinlikle gerek yoktur.** Aşağıdaki tablodan işletim sisteminize uygun hazır paketi indirip hemen kullanabilirsiniz.
 
-| İşletim Sistemi | Paket Formatı | İndirme Bağlantısı | Boyut | Durum |
-| :--- | :--- | :--- | :--- | :--- |
-| 🐧 **Linux (Tüm Dağıtımlar)** | Taşınabilir (Portable .tar.gz) | [📦 **YuzGizle-v1.0.0-Linux-x86_64.tar.gz**](https://github.com/HIbrahimK/yuztanima/releases/latest) | ~524 KB | 🟢 **Yayında** |
-| 🪟 **Windows 10 / 11 (64-bit)** | Taşınabilir (.zip) | [📦 **YuzGizle-v1.0.0-Windows-x64.zip**](https://github.com/HIbrahimK/yuztanima/releases/latest) | Yakında | 🟡 **Hazırlanıyor** |
+| İşletim Sistemi | Paket Formatı | İndirme Bağlantısı | Durum |
+| :--- | :--- | :--- | :--- |
+| 🪟 **Windows 10 / 11 (64-bit)** | Taşınabilir (.zip) | [📦 **YuzGizle-v1.0.0-Windows-x64.zip**](https://github.com/HIbrahimK/yuztanima/releases/latest) | 🟢 **Hazır (Taşınabilir / Kurulumsuz)** |
+| 🐧 **Linux (Tüm Dağıtımlar)** | Taşınabilir (.tar.gz) | [📦 **YuzGizle-v1.0.0-Linux-x86_64.tar.gz**](https://github.com/HIbrahimK/yuztanima/releases/latest) | 🟢 **Hazır (Taşınabilir / Kurulumsuz)** |
 
 ### ⚡ 3 Adımda Kolay Kurulum ve Çalıştırma:
-1. **İndirin:** Yukarıdaki tablodan veya [GitHub Releases](https://github.com/HIbrahimK/yuztanima/releases/latest) sayfasından `YuzGizle-v1.0.0-Linux-x86_64.tar.gz` dosyasını bilgisayarınıza indirin.
-2. **Arşivden Çıkartın:** İndirilen dosyaya sağ tıklayın ve **"Buraya Çıkart"** (Extract Here) seçeneğini seçin.
-3. **Çift Tıklayıp Başlatın:** Klasörün içindeki **`baslat.sh`** dosyasına çift tıklayın! (Gerekirse terminalden `./baslat.sh` ile çalıştırabilirsiniz).
+
+#### 🪟 Windows Kullanıcıları İçin:
+1. **İndirin:** [GitHub Releases](https://github.com/HIbrahimK/yuztanima/releases/latest) sayfasından `YuzGizle-v1.0.0-Windows-x64.zip` dosyasını indirin.
+2. **Ayıklayın:** İndirilen `.zip` dosyasına sağ tıklayıp **"Tümünü Ayıkla"** deyin.
+3. **Başlatın:** Klasör içindeki **`YuzGizle.exe`** dosyasına çift tıklayın!
+
+#### 🐧 Linux Kullanıcıları İçin:
+1. **İndirin:** [GitHub Releases](https://github.com/HIbrahimK/yuztanima/releases/latest) sayfasından `YuzGizle-v1.0.0-Linux-x86_64.tar.gz` dosyasını indirin.
+2. **Arşivden Çıkartın:** Dosyaya sağ tıklayıp **"Buraya Çıkart"** deyin.
+3. **Başlatın:** Klasördeki **`baslat.sh`** dosyasına çift tıklayın (veya terminalde `./baslat.sh` çalıştırın).
 
 ---
 

@@ -30,8 +30,8 @@ find_package(OpenCV REQUIRED COMPONENTS
     imgcodecs
     objdetect
     dnn
-    xobjdetect
 )
+find_package(OpenCV OPTIONAL_COMPONENTS xobjdetect)
 
 # spdlog (opsiyonel loglama)
 find_package(spdlog QUIET)

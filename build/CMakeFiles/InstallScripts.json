@@ -1,9 +1,0 @@
-{
-	"InstallScripts" : 
-	[
-		"/home/halil/Masa\u00fcst\u00fc/yuztanima/build/cmake_install.cmake",
-		"/home/halil/Masa\u00fcst\u00fc/yuztanima/build/src/cmake_install.cmake",
-		"/home/halil/Masa\u00fcst\u00fc/yuztanima/build/tests/cmake_install.cmake"
-	],
-	"Parallel" : false
-}
