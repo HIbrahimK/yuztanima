@@ -147,6 +147,7 @@ jobs:
           curl -sL "https://github.com/opencv/opencv/releases/download/4.10.0/opencv-4.10.0-windows.exe" -o opencv.exe
           7z x opencv.exe -y -o"C:/opencv" > /dev/null
           echo "OpenCV başarıyla C:/opencv/opencv/build dizinine açıldı."
+          echo "C:/opencv/opencv/build/x64/vc16/bin" >> $GITHUB_PATH
 
       - name: Download AI Models
         shell: bash
@@ -165,7 +166,8 @@ jobs:
           cmake -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_TESTS=OFF \
-            -DOpenCV_DIR="C:/opencv/opencv/build"
+            -DOpenCV_DIR="C:/opencv/opencv/build/x64/vc16/lib" \
+            -DOpenCV_RUNTIME="vc16"
 
       - name: Build Application
         shell: bash
