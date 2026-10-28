@@ -1,5 +1,5 @@
 // YüzGizle PWA Service Worker (Çevrimdışı Önbellekleme)
-const CACHE_NAME = 'yuzgizle-pwa-v1.0.0';
+const CACHE_NAME = 'yuzgizle-pwa-v1.0.1';
 
 const ASSETS_TO_CACHE = [
   './',
@@ -10,9 +10,15 @@ const ASSETS_TO_CACHE = [
   './js/tf.min.js',
   './js/blazeface.min.js',
   './js/jszip.min.js',
+  './models/model.json',
+  './models/group1-shard1of1.bin',
   './icons/icon-192.png',
   './icons/icon-512.png',
-  './emojis/smile.png'
+  './emojis/smile.png',
+  './emojis/cool.png',
+  './emojis/grin.png',
+  './emojis/mask.png',
+  './emojis/star.png'
 ];
 
 // Kurulum ve önbellekleme

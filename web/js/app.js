@@ -25,13 +25,12 @@ const state = {
   watermarkPosition: 'bottom_right',
   logoImg: null,
 
-  // Çizim / Etkileşim
-  scaleFactor: 1,
-  offsetX: 0,
-  offsetY: 0,
-  isDrawing: false,
-  dragStartX: 0,
-  dragStartY: 0
+  // Çizim & Dokunmatik Etkileşim
+  isPointerDown: false,
+  dragStartCanvasX: 0,
+  dragStartCanvasY: 0,
+  dragCurrentCanvasX: 0,
+  dragCurrentCanvasY: 0
 };
 
 // =============================================================================
@@ -80,17 +79,26 @@ async function loadFaceModel() {
     state.modelLoading = true;
     if (loading) {
       loading.style.display = 'flex';
-      loadingText.textContent = 'Yapay zeka yüz algılama modeli yükleniyor...';
+      loadingText.textContent = 'Yapay zeka modeli çevrimdışı yükleniyor...';
     }
 
     if (window.blazeface) {
-      state.model = await blazeface.load();
-      console.log('BlazeFace modeli başarıyla yüklendi.');
-    } else {
-      console.warn('BlazeFace kütüphanesi bulunamadı, manuel seçim modu aktif.');
+      // Yerel model dosyasından yükle (Harici sunucu/Kaggle bağımlılığı yok!)
+      state.model = await blazeface.load({
+        modelUrl: './models/model.json',
+        scoreThreshold: 0.55
+      });
+      console.log('✅ Yerel BlazeFace modeli başarıyla yüklendi.');
     }
   } catch (error) {
-    console.error('Model yüklenemedi:', error);
+    console.warn('Yerel model yüklenirken hata, CDN deneniyor:', error);
+    try {
+      if (window.blazeface) {
+        state.model = await blazeface.load({ scoreThreshold: 0.55 });
+      }
+    } catch (err2) {
+      console.error('Yapay zeka modeli yüklenemedi:', err2);
+    }
   } finally {
     state.modelLoading = false;
     if (loading) loading.style.display = 'none';
@@ -120,11 +128,9 @@ function initEventListeners() {
   const cameraInput = document.getElementById('cameraInput');
   const dropzone = document.getElementById('uploadDropzone');
 
-  // Dosya Seçimleri
   if (fileInput) fileInput.addEventListener('change', handleFiles);
   if (cameraInput) cameraInput.addEventListener('change', handleFiles);
 
-  // Drag & Drop
   if (dropzone) {
     dropzone.addEventListener('dragover', (e) => {
       e.preventDefault();
@@ -140,14 +146,13 @@ function initEventListeners() {
     });
   }
 
-  // Gizleme Yöntemi Kartları
+  // Gizleme Yöntemi Seçimi
   document.querySelectorAll('.choice-card[data-method]').forEach(card => {
     card.addEventListener('click', () => {
       document.querySelectorAll('.choice-card[data-method]').forEach(c => c.classList.remove('selected'));
       card.classList.add('selected');
       state.method = card.getAttribute('data-method');
 
-      // İlgili ayar panelini aç/kapat
       document.getElementById('blurSettings').style.display = (state.method === 'blur') ? 'flex' : 'none';
       document.getElementById('pixelSettings').style.display = (state.method === 'pixelate') ? 'flex' : 'none';
       document.getElementById('emojiSettings').style.display = (state.method === 'emoji') ? 'flex' : 'none';
@@ -156,7 +161,7 @@ function initEventListeners() {
     });
   });
 
-  // Şablon Kartları
+  // Şablon Seçimi
   document.querySelectorAll('.choice-card[data-preset]').forEach(card => {
     card.addEventListener('click', () => {
       document.querySelectorAll('.choice-card[data-preset]').forEach(c => c.classList.remove('selected'));
@@ -166,7 +171,7 @@ function initEventListeners() {
     });
   });
 
-  // Emoji Seçici
+  // Emoji Seçimi
   document.querySelectorAll('.emoji-choice').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.emoji-choice').forEach(b => b.classList.remove('selected'));
@@ -195,7 +200,7 @@ function initEventListeners() {
     });
   }
 
-  // Filigran Kontrolleri
+  // Filigran & Logo
   const chkWatermark = document.getElementById('chkWatermark');
   const txtWatermark = document.getElementById('txtWatermark');
   const logoInput = document.getElementById('logoInput');
@@ -231,7 +236,7 @@ function initEventListeners() {
     });
   }
 
-  // İndirme & Paylaşma Butonları
+  // İndirme & Paylaşma
   const btnDownloadCurrent = document.getElementById('btnDownloadCurrent');
   const btnDownloadAll = document.getElementById('btnDownloadAll');
   const btnShare = document.getElementById('btnShare');
@@ -245,7 +250,7 @@ function initEventListeners() {
 }
 
 // =============================================================================
-// 3. Fotoğraf Yükleme & Yapay Zeka Yüz Tespiti
+// 3. Fotoğraf Yükleme & Yapay Zeka Yüz Tespiti (Ölçeklendirilmiş & Hızlı)
 // =============================================================================
 function handleFiles(event) {
   if (event.target.files && event.target.files.length > 0) {
@@ -262,7 +267,7 @@ async function handleFileList(files) {
     const file = files[i];
     if (!file.type.startsWith('image/')) continue;
 
-    loadingText.textContent = `Fotoğraf yükleniyor ve yüzler tespit ediliyor (${i + 1}/${files.length})...`;
+    loadingText.textContent = `Yüzler yapay zeka ile taranıyor (${i + 1}/${files.length})...`;
 
     const img = await loadImageFromFile(file);
     const faces = await detectFacesInImage(img);
@@ -310,33 +315,55 @@ function loadImageFromFile(file) {
 
 async function detectFacesInImage(img) {
   if (!state.model) {
-    // Model henüz yoksa yüz listesi boş döner
+    console.warn('Model henüz hazır değil.');
     return [];
   }
 
   try {
-    const predictions = await state.model.estimateFaces(img, false);
-    return predictions.map(pred => {
-      const start = pred.topLeft;
-      const end = pred.bottomRight;
-      const width = end[0] - start[0];
-      const height = end[1] - start[1];
+    // Büyük fotoğrafları (örneğin 12MP telefon fotoğraflarını) GPU belleğini taşmaması için
+    // en fazla 1024px çözünürlüğe indirgeyerek taratıyoruz
+    const maxDim = 1024;
+    let inputSource = img;
+    let scaleDet = 1.0;
 
-      // Pay ekle (baş ve çene tam kapansın)
-      const padX = width * 0.1;
-      const padY = height * 0.15;
+    if (img.width > maxDim || img.height > maxDim) {
+      scaleDet = maxDim / Math.max(img.width, img.height);
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = Math.round(img.width * scaleDet);
+      tempCanvas.height = Math.round(img.height * scaleDet);
+      const tempCtx = tempCanvas.getContext('2d');
+      tempCtx.drawImage(img, 0, 0, tempCanvas.width, tempCanvas.height);
+      inputSource = tempCanvas;
+    }
+
+    const predictions = await state.model.estimateFaces(inputSource, false);
+    console.log(`Fotoğrafta ${predictions.length} yüz bulundu.`);
+
+    return predictions.map(pred => {
+      // Koordinatları orijinal görüntü boyutuna geri ölçeklendir
+      const startX = pred.topLeft[0] / scaleDet;
+      const startY = pred.topLeft[1] / scaleDet;
+      const endX = pred.bottomRight[0] / scaleDet;
+      const endY = pred.bottomRight[1] / scaleDet;
+
+      const width = endX - startX;
+      const height = endY - startY;
+
+      // Çene ve saç için güvenlik payı
+      const padX = width * 0.12;
+      const padY = height * 0.18;
 
       return {
-        x: Math.max(0, start[0] - padX),
-        y: Math.max(0, start[1] - padY),
+        x: Math.max(0, startX - padX),
+        y: Math.max(0, startY - padY),
         width: Math.min(img.width, width + (padX * 2)),
         height: Math.min(img.height, height + (padY * 2)),
-        exempt: false, // Öğretmen muafiyeti
+        exempt: false, // Varsayılan: Gizlenecek
         manual: false
       };
     });
   } catch (err) {
-    console.error('Yüz tespiti hatası:', err);
+    console.error('Yüz tespiti sırasında hata:', err);
     return [];
   }
 }
@@ -369,66 +396,120 @@ function selectImage(index) {
 }
 
 // =============================================================================
-// 5. Tuval Çizimi & Yüz Gizleme & Filigran Motoru
+// 5. Tuval Çizimi & Koordinat Dönüşüm Matrisi (Kritik Düzeltme!)
 // =============================================================================
-function renderCurrentCanvas() {
-  const current = state.images[state.currentIndex];
-  if (!current) return;
 
-  const canvas = document.getElementById('previewCanvas');
-  const ctx = canvas.getContext('2d');
-
-  // Preset Hedef Boyutlarını Belirle
+/**
+ * Tuval boyutu ile orijinal görüntü arasındaki ölçek ve kırpma (crop) değerlerini hesaplar.
+ */
+function getCanvasTransform(current, canvas) {
   const targetDims = calculatePresetDimensions(current.img.width, current.img.height, state.preset);
   canvas.width = targetDims.width;
   canvas.height = targetDims.height;
 
-  // 1. Orijinal Resmi Hedef Boyuta Göre Çiz (Cover / Orantılı Kırpma)
+  // Cover modu: Görüntü hedef en/boy oranına orantılı olarak sığdırılır
   const scale = Math.max(canvas.width / current.img.width, canvas.height / current.img.height);
   const sw = canvas.width / scale;
   const sh = canvas.height / scale;
   const sx = (current.img.width - sw) / 2;
   const sy = (current.img.height - sh) / 2;
 
-  ctx.drawImage(current.img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+  return { scale, sw, sh, sx, sy, targetDims };
+}
 
-  // Koordinat Dönüşüm Oranları
-  const scaleX = canvas.width / sw;
-  const scaleY = canvas.height / sh;
+/**
+ * Orijinal görüntü piksel koordinatını Tuval piksel koordinatına dönüştürür
+ */
+function imageToCanvasRect(face, transform, canvas) {
+  const scaleX = canvas.width / transform.sw;
+  const scaleY = canvas.height / transform.sh;
+  return {
+    x: (face.x - transform.sx) * scaleX,
+    y: (face.y - transform.sy) * scaleY,
+    width: face.width * scaleX,
+    height: face.height * scaleY
+  };
+}
 
-  // 2. Yüzleri Gizle
+/**
+ * Tuval piksel koordinatını Orijinal görüntü piksel koordinatına dönüştürür (Manuel Seçim İçin)
+ */
+function canvasToImageRect(canvasRect, transform, canvas) {
+  const invScaleX = transform.sw / canvas.width;
+  const invScaleY = transform.sh / canvas.height;
+  return {
+    x: Math.max(0, transform.sx + canvasRect.x * invScaleX),
+    y: Math.max(0, transform.sy + canvasRect.y * invScaleY),
+    width: Math.max(10, canvasRect.width * invScaleX),
+    height: Math.max(10, canvasRect.height * invScaleY)
+  };
+}
+
+function renderCurrentCanvas() {
+  const current = state.images[state.currentIndex];
+  if (!current) return;
+
+  const canvas = document.getElementById('previewCanvas');
+  const ctx = canvas.getContext('2d');
+  const transform = getCanvasTransform(current, canvas);
+
+  // 1. Resmi Çiz
+  ctx.drawImage(current.img, transform.sx, transform.sy, transform.sw, transform.sh, 0, 0, canvas.width, canvas.height);
+
+  // 2. Yüzleri Gizle ve Rehber Çerçeveleri Çiz
   current.faces.forEach((face) => {
-    // Fotoğraf içi koordinatları tuval koordinatlarına eşle
-    const fx = (face.x - sx) * scaleX;
-    const fy = (face.y - sy) * scaleY;
-    const fw = face.width * scaleX;
-    const fh = face.height * scaleY;
+    const cRect = imageToCanvasRect(face, transform, canvas);
 
     if (!face.exempt) {
-      applyHidingStrategy(ctx, fx, fy, fw, fh);
+      applyHidingStrategy(ctx, cRect.x, cRect.y, cRect.width, cRect.height);
     }
 
-    // Yüz Kutularını ve Etiketlerini Çiz (Önizleme Rehberi)
-    drawFaceGuide(ctx, fx, fy, fw, fh, face);
+    drawFaceGuide(ctx, cRect.x, cRect.y, cRect.width, cRect.height, face);
   });
 
-  // 3. Logo ve Filigran Ekle
+  // 3. Kullanıcı Parmağıyla/Fareyle Sürükleme Yapıyorsa Canlı Seçim Kutusunu Çiz
+  if (state.isPointerDown) {
+    const rx = Math.min(state.dragStartCanvasX, state.dragCurrentCanvasX);
+    const ry = Math.min(state.dragStartCanvasY, state.dragCurrentCanvasY);
+    const rw = Math.abs(state.dragCurrentCanvasX - state.dragStartCanvasX);
+    const rh = Math.abs(state.dragCurrentCanvasY - state.dragStartCanvasY);
+
+    if (rw > 5 || rh > 5) {
+      ctx.save();
+      ctx.strokeStyle = '#facc15';
+      ctx.lineWidth = 3;
+      ctx.setLineDash([6, 6]);
+      ctx.strokeRect(rx, ry, rw, rh);
+      ctx.fillStyle = 'rgba(250, 204, 21, 0.2)';
+      ctx.fillRect(rx, ry, rw, rh);
+
+      // Boyut Bilgi Hapı
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+      ctx.fillRect(rx, Math.max(0, ry - 22), 95, 18);
+      ctx.fillStyle = '#facc15';
+      ctx.font = 'bold 11px sans-serif';
+      ctx.fillText('Yeni Alan...', rx + 6, Math.max(14, ry - 8));
+      ctx.restore();
+    }
+  }
+
+  // 4. Logo ve Filigran
   if (state.watermarkEnabled || state.logoImg) {
     applyWatermark(ctx, canvas.width, canvas.height);
   }
 
-  // 4. İstatistik Panelini Güncelle
+  // 5. Durum Hapını Güncelle
   updateStatsPill(current.faces);
 }
 
 function calculatePresetDimensions(origW, origH, preset) {
   switch (preset) {
     case 'meb_manset':
-      return { width: 1200, height: 568 }; // 19:9 MEB Resmi Standardı
+      return { width: 1200, height: 568 }; // 19:9 MEB Standardı
     case 'eokul':
-      return { width: 133, height: 171 }; // e-Okul Standart Vesikalık
+      return { width: 133, height: 171 }; // e-Okul Standart
     case 'mebbis':
-      return { width: 394, height: 512 }; // MEBBİS Vesikalık
+      return { width: 394, height: 512 }; // MEBBİS
     case 'insta_square':
       return { width: 1080, height: 1080 };
     case 'insta_portrait':
@@ -447,11 +528,9 @@ function applyHidingStrategy(ctx, x, y, w, h) {
   ctx.clip();
 
   if (state.method === 'blur') {
-    // Gaussian Blur
     ctx.filter = `blur(${state.blurStrength}px)`;
     ctx.drawImage(ctx.canvas, 0, 0);
   } else if (state.method === 'pixelate') {
-    // Mozaik (Pikselleştirme)
     const size = Math.max(4, state.pixelSize);
     const tempCanvas = document.createElement('canvas');
     tempCanvas.width = Math.max(1, Math.floor(w / size));
@@ -463,11 +542,9 @@ function applyHidingStrategy(ctx, x, y, w, h) {
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(tempCanvas, 0, 0, tempCanvas.width, tempCanvas.height, x, y, w, h);
   } else if (state.method === 'blackbar') {
-    // Siyah Bant
     ctx.fillStyle = '#000000';
     ctx.fillRect(x, y, w, h);
   } else if (state.method === 'emoji') {
-    // Emoji ile Kaplama
     const emojiImg = new Image();
     emojiImg.src = `emojis/${state.selectedEmoji}`;
     if (emojiImg.complete) {
@@ -483,29 +560,26 @@ function applyHidingStrategy(ctx, x, y, w, h) {
 function drawFaceGuide(ctx, x, y, w, h, face) {
   ctx.save();
   if (face.exempt) {
-    // Muaf (Öğretmen) -> Turuncu Kesikli Çerçeve
     ctx.strokeStyle = '#f59e0b';
     ctx.lineWidth = 3;
     ctx.setLineDash([6, 4]);
     ctx.strokeRect(x, y, w, h);
 
-    // Kapsül Etiket
-    ctx.fillStyle = 'rgba(245, 158, 11, 0.9)';
-    ctx.fillRect(x, Math.max(0, y - 22), 120, 20);
+    ctx.fillStyle = 'rgba(245, 158, 11, 0.95)';
+    ctx.fillRect(x, Math.max(0, y - 22), 125, 20);
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 11px sans-serif';
     ctx.fillText('🛡️ Muaf (Öğretmen)', x + 6, Math.max(14, y - 8));
   } else {
-    // Gizlenen Öğrenci Yüzü
     ctx.strokeStyle = '#3b82f6';
     ctx.lineWidth = 2;
     ctx.strokeRect(x, y, w, h);
     if (face.manual) {
-      ctx.fillStyle = 'rgba(59, 130, 246, 0.85)';
-      ctx.fillRect(x, Math.max(0, y - 18), 28, 16);
+      ctx.fillStyle = 'rgba(59, 130, 246, 0.9)';
+      ctx.fillRect(x, Math.max(0, y - 18), 32, 16);
       ctx.fillStyle = '#fff';
       ctx.font = 'bold 10px sans-serif';
-      ctx.fillText('[M]', x + 5, Math.max(12, y - 6));
+      ctx.fillText('[M]', x + 6, Math.max(12, y - 6));
     }
   }
   ctx.restore();
@@ -519,7 +593,6 @@ function applyWatermark(ctx, canvasW, canvasH) {
   let posX = canvasW - pad;
   let posY = canvasH - pad;
 
-  // 1. Logo
   if (state.logoImg) {
     const logoW = Math.min(120, canvasW * 0.18);
     const logoH = (state.logoImg.height / state.logoImg.width) * logoW;
@@ -527,7 +600,6 @@ function applyWatermark(ctx, canvasW, canvasH) {
     posY -= (logoH + 8);
   }
 
-  // 2. Metin Filigranı ("T.C. Millî Eğitim Bakanlığı")
   if (state.watermarkEnabled && state.watermarkText.trim() !== '') {
     const fontSize = Math.max(14, Math.floor(canvasW * 0.022));
     ctx.font = `bold ${fontSize}px sans-serif`;
@@ -538,13 +610,11 @@ function applyWatermark(ctx, canvasW, canvasH) {
     const boxX = posX - textW - 16;
     const boxY = posY - textH;
 
-    // Kontrast Kapsülü (Arka plan hapı)
     ctx.fillStyle = 'rgba(15, 23, 42, 0.75)';
     ctx.beginPath();
     ctx.roundRect(boxX, boxY, textW + 16, textH, 6);
     ctx.fill();
 
-    // Metin
     ctx.fillStyle = '#ffffff';
     ctx.fillText(state.watermarkText, boxX + 8, boxY + fontSize);
   }
@@ -562,19 +632,30 @@ function updateStatsPill(faces) {
     pill.innerHTML = `
       <span class="stat-item faces">👤 ${hidden} Gizlenecek</span>
       <span class="stat-item exempt">🛡️ ${exempt} Muaf</span>
+      <span class="clear-manual-btn" id="btnClearManual" title="Tüm manuel alanları temizle">↺ Temizle</span>
     `;
+    const btnClear = document.getElementById('btnClearManual');
+    if (btnClear) {
+      btnClear.onclick = (e) => {
+        e.stopPropagation();
+        const current = state.images[state.currentIndex];
+        if (current) {
+          current.faces = current.faces.filter(f => !f.manual);
+          renderCurrentCanvas();
+        }
+      };
+    }
   }
 }
 
 // =============================================================================
-// 6. Tuval Etkileşimi (Dokunarak Muafiyet & Sürükleyerek Alan Ekleme)
+// 6. Tuval Etkileşimi (Pixel-Perfect Koordinat Eşleme)
 // =============================================================================
 function setupCanvasInteractions() {
   const canvas = document.getElementById('previewCanvas');
-  let startX = 0, startY = 0;
-  let isDragging = false;
 
-  const getCanvasCoords = (clientX, clientY) => {
+  // Ekran dokunmatik/fare koordinatını doğrudan tuval iç piksel koordinatına çevirir
+  const getCanvasPixelCoords = (clientX, clientY) => {
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
@@ -584,28 +665,48 @@ function setupCanvasInteractions() {
     };
   };
 
-  // Tıklama / Dokunma ile Yüz Muafiyeti Aç/Kapat
-  const handlePointerDown = (clientX, clientY) => {
-    const pos = getCanvasCoords(clientX, clientY);
-    startX = pos.x;
-    startY = pos.y;
-    isDragging = false;
+  const onPointerDown = (clientX, clientY) => {
+    const pos = getCanvasPixelCoords(clientX, clientY);
+    state.isPointerDown = true;
+    state.dragStartCanvasX = pos.x;
+    state.dragStartCanvasY = pos.y;
+    state.dragCurrentCanvasX = pos.x;
+    state.dragCurrentCanvasY = pos.y;
   };
 
-  const handlePointerUp = (clientX, clientY) => {
-    const pos = getCanvasCoords(clientX, clientY);
-    const dist = Math.hypot(pos.x - startX, pos.y - startY);
+  const onPointerMove = (clientX, clientY) => {
+    if (!state.isPointerDown) return;
+    const pos = getCanvasPixelCoords(clientX, clientY);
+    state.dragCurrentCanvasX = pos.x;
+    state.dragCurrentCanvasY = pos.y;
+    renderCurrentCanvas();
+  };
+
+  const onPointerUp = (clientX, clientY) => {
+    if (!state.isPointerDown) return;
+    state.isPointerDown = false;
 
     const current = state.images[state.currentIndex];
     if (!current) return;
 
-    if (dist < 10) {
-      // Tıklama: Yüz kutusu içinde mi?
+    const pos = getCanvasPixelCoords(clientX, clientY);
+    const dist = Math.hypot(pos.x - state.dragStartCanvasX, pos.y - state.dragStartCanvasY);
+    const transform = getCanvasTransform(current, canvas);
+
+    if (dist < 12) {
+      // 1. TIKLAMA / DOKUNMA: Mevcut bir yüzün üzerine tıklandı mı?
       let toggled = false;
       for (let i = current.faces.length - 1; i >= 0; i--) {
-        const f = current.faces[i];
-        if (pos.x >= f.x && pos.x <= (f.x + f.width) && pos.y >= f.y && pos.y <= (f.y + f.height)) {
-          f.exempt = !f.exempt;
+        const face = current.faces[i];
+        const cRect = imageToCanvasRect(face, transform, canvas);
+
+        if (
+          pos.x >= cRect.x &&
+          pos.x <= (cRect.x + cRect.width) &&
+          pos.y >= cRect.y &&
+          pos.y <= (cRect.y + cRect.height)
+        ) {
+          face.exempt = !face.exempt;
           toggled = true;
           break;
         }
@@ -615,38 +716,54 @@ function setupCanvasInteractions() {
         renderCurrentCanvas();
         return;
       }
-    } else if (dist >= 20) {
-      // Sürükleme: Manuel Gizleme Alanı Ekle
-      const rx = Math.min(startX, pos.x);
-      const ry = Math.min(startY, pos.y);
-      const rw = Math.abs(pos.x - startX);
-      const rh = Math.abs(pos.y - startY);
+    } else if (dist >= 18) {
+      // 2. SÜRÜKLEME: Manuel Gizleme Alanı Ekle (Piksel-Hassas Eşleme)
+      const minX = Math.min(state.dragStartCanvasX, pos.x);
+      const minY = Math.min(state.dragStartCanvasY, pos.y);
+      const w = Math.abs(pos.x - state.dragStartCanvasX);
+      const h = Math.abs(pos.y - state.dragStartCanvasY);
 
-      current.faces.push({
-        x: rx,
-        y: ry,
-        width: rw,
-        height: rh,
-        exempt: false,
-        manual: true
-      });
+      if (w >= 15 && h >= 15) {
+        // Tuvaldeki seçimi orijinal resim koordinatlarına dönüştür
+        const imgRect = canvasToImageRect({ x: minX, y: minY, width: w, height: h }, transform, canvas);
 
-      renderCurrentCanvas();
+        current.faces.push({
+          x: imgRect.x,
+          y: imgRect.y,
+          width: imgRect.width,
+          height: imgRect.height,
+          exempt: false,
+          manual: true
+        });
+
+        renderCurrentCanvas();
+      }
     }
+
+    renderCurrentCanvas();
   };
 
-  canvas.addEventListener('mousedown', (e) => handlePointerDown(e.clientX, e.clientY));
-  canvas.addEventListener('mouseup', (e) => handlePointerUp(e.clientX, e.clientY));
+  // Fare Etkinlikleri
+  canvas.addEventListener('mousedown', (e) => onPointerDown(e.clientX, e.clientY));
+  window.addEventListener('mousemove', (e) => onPointerMove(e.clientX, e.clientY));
+  window.addEventListener('mouseup', (e) => onPointerUp(e.clientX, e.clientY));
 
+  // Dokunmatik Etkinlikleri (Mobil)
   canvas.addEventListener('touchstart', (e) => {
     if (e.touches.length === 1) {
-      handlePointerDown(e.touches[0].clientX, e.touches[0].clientY);
+      onPointerDown(e.touches[0].clientX, e.touches[0].clientY);
+    }
+  }, { passive: true });
+
+  canvas.addEventListener('touchmove', (e) => {
+    if (e.touches.length === 1 && state.isPointerDown) {
+      onPointerMove(e.touches[0].clientX, e.touches[0].clientY);
     }
   }, { passive: true });
 
   canvas.addEventListener('touchend', (e) => {
     if (e.changedTouches.length === 1) {
-      handlePointerUp(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+      onPointerUp(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
     }
   }, { passive: true });
 }
@@ -656,7 +773,6 @@ function setupCanvasInteractions() {
 // =============================================================================
 async function exportCanvasToBlob(canvas, preset) {
   if (preset === 'eokul') {
-    // e-Okul için iteratif < 20 KB JPEG kalitesi arama
     let quality = 0.85;
     let blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', quality));
     while (blob.size > 20 * 1024 && quality > 0.15) {
@@ -741,7 +857,6 @@ async function shareCurrentPhoto() {
       console.log('Paylaşım iptal edildi veya desteklenmiyor.');
     }
   } else {
-    // Paylaşım desteklenmiyorsa doğrudan indir
     downloadCurrentPhoto();
   }
 }

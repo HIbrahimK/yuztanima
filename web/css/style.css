@@ -364,6 +364,22 @@ body {
 .stat-item.faces { color: var(--accent-primary); }
 .stat-item.exempt { color: var(--accent-warning); }
 
+.clear-manual-btn {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.clear-manual-btn:hover {
+  background: rgba(239, 68, 68, 0.4);
+}
+
 .canvas-tools-group {
   pointer-events: auto;
   display: flex;
