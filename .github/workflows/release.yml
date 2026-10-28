@@ -45,6 +45,7 @@ jobs:
 
       - name: Configure CMake
         run: |
+          rm -rf build
           cmake -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_TESTS=OFF
@@ -161,6 +162,7 @@ jobs:
       - name: Configure CMake
         shell: bash
         run: |
+          rm -rf build
           cmake -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_TESTS=OFF \
