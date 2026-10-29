@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=YüzGizle Web
+Comment=MEB KVKK Uyumlu Fotoğraf Yüz Gizleme (Web)
+Exec=/bin/bash -c "cd /home/halil/Masaüstü/yuztanima && ./baslat_web.sh"
+Icon=/home/halil/Masaüstü/yuztanima/web/icons/icon-512.png
+Terminal=false
+Categories=Graphics;Utility;

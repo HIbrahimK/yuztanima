@@ -50,6 +50,15 @@
   <!-- Ana Çalışma Alanı -->
   <main class="main-container">
 
+    <!-- file:// Protokol Uyarısı (CORS & Sunucu Bilgilendirmesi) -->
+    <div id="fileProtocolWarning" class="file-warning-banner" style="display: none;">
+      <span class="warning-icon">⚠️</span>
+      <div class="warning-content">
+        <strong>Doğrudan Dosya Olarak Açıldı (file://)</strong>
+        <p>Tarayıcı güvenlik kuralları (CORS) gereği yapay zeka modelleri <code>file://</code> protokolünde çalıştırılamaz. Uygulamanın çalışması için lütfen terminalden <code>./baslat_web.sh</code> betiğini çalıştırın ve <b>http://localhost:8080</b> adresini açın.</p>
+      </div>
+    </div>
+
     <!-- 1. Fotoğraf Yükleme / Karşılama Alanı -->
     <div id="uploadDropzone" class="upload-dropzone">
       <div class="upload-icon-circle">📸</div>
@@ -94,9 +103,17 @@
           </button>
         </div>
       </div>
+
+      <!-- Yakınlaştır / Uzaklaştır / Sığdır Kontrol Çubuğu -->
+      <div class="canvas-zoom-widget">
+        <button id="btnZoomOut" class="zoom-btn" title="Uzaklaştır (－)" aria-label="Uzaklaştır">－</button>
+        <span id="zoomPercentBadge" class="zoom-percent-badge" title="Tıkla: %100 Yap">%100</span>
+        <button id="btnZoomIn" class="zoom-btn" title="Yakınlaştır (＋)" aria-label="Yakınlaştır">＋</button>
+        <button id="btnZoomFit" class="zoom-btn fit" title="Ekrana Sığdır / Sıfırla" aria-label="Sığdır">📐 Sığdır</button>
+      </div>
     </div>
 
-    <!-- Mobil & Dokunmatik Hızlı Araç Çubuğu (Ekle / Çıkar / Muafiyet / Geri Al / Yüz Tanı) -->
+    <!-- Mobil & Dokunmatik Hızlı Araç Çubuğu (Ekle / Çıkar / Muafiyet / Kaydır / Geri Al / Yüz Tanı) -->
     <div id="touchToolbar" class="touch-toolbar">
       <div class="tool-segment">
         <button id="btnToolAdd" class="tool-btn active" title="Yeni Gizleme Alanı Ekle (Sürükle-Çiz)">
@@ -110,6 +127,10 @@
         <button id="btnToolExempt" class="tool-btn" title="Öğretmen / Muafiyet Modu">
           <span class="tool-icon">🛡️</span>
           <span class="tool-label">Muafiyet</span>
+        </button>
+        <button id="btnToolPan" class="tool-btn" title="Tuvali Kaydır / Gezin (Dokunmatik ve Fare)">
+          <span class="tool-icon">🖐️</span>
+          <span class="tool-label">Kaydır</span>
         </button>
       </div>
 
@@ -140,6 +161,14 @@
         </div>
       </div>
       <div class="selected-face-actions">
+        <button id="btnShrinkSelectedFace" class="btn-face-action" title="Alanı Küçült (-10%)">
+          <span class="action-icon">➖</span>
+          <span>Küçült</span>
+        </button>
+        <button id="btnGrowSelectedFace" class="btn-face-action" title="Alanı Büyüt (+10%)">
+          <span class="action-icon">➕</span>
+          <span>Büyüt</span>
+        </button>
         <button id="btnDeleteSelectedFace" class="btn-face-action delete" title="Bu Alanı Çıkar">
           <span class="action-icon">🗑️</span>
           <span>Çıkar</span>
@@ -224,26 +253,90 @@
           <input type="range" id="pixelSlider" class="range-slider" min="8" max="40" value="18">
         </div>
 
-        <!-- Emoji Seçici -->
+        <!-- Emoji Seçici (20 Çeşit Sevimli Emoji) -->
         <div id="emojiSettings" class="setting-group" style="display: none;">
-          <span class="setting-label">Emoji Seçin</span>
+          <span class="setting-label">Emoji Seçin (20 Çeşit)</span>
           <div class="emoji-selector">
-            <div class="emoji-choice selected" data-emoji="smile.png"><img src="emojis/smile.png" alt="smile"></div>
-            <div class="emoji-choice" data-emoji="cool.png"><img src="emojis/cool.png" alt="cool"></div>
-            <div class="emoji-choice" data-emoji="grin.png"><img src="emojis/grin.png" alt="grin"></div>
-            <div class="emoji-choice" data-emoji="mask.png"><img src="emojis/mask.png" alt="mask"></div>
-            <div class="emoji-choice" data-emoji="star.png"><img src="emojis/star.png" alt="star"></div>
+            <div class="emoji-choice selected" data-emoji="smile.png" title="Gülümseme"><img src="emojis/smile.png" alt="smile"></div>
+            <div class="emoji-choice" data-emoji="cool.png" title="Havalı"><img src="emojis/cool.png" alt="cool"></div>
+            <div class="emoji-choice" data-emoji="grin.png" title="Sırıtma"><img src="emojis/grin.png" alt="grin"></div>
+            <div class="emoji-choice" data-emoji="party.png" title="Kutlama"><img src="emojis/party.png" alt="party"></div>
+            <div class="emoji-choice" data-emoji="mask.png" title="Maskeli"><img src="emojis/mask.png" alt="mask"></div>
+            <div class="emoji-choice" data-emoji="star.png" title="Yıldız"><img src="emojis/star.png" alt="star"></div>
+            <div class="emoji-choice" data-emoji="angel.png" title="Melek"><img src="emojis/angel.png" alt="angel"></div>
+            <div class="emoji-choice" data-emoji="cat.png" title="Kedi"><img src="emojis/cat.png" alt="cat"></div>
+            <div class="emoji-choice" data-emoji="dog.png" title="Köpek"><img src="emojis/dog.png" alt="dog"></div>
+            <div class="emoji-choice" data-emoji="panda.png" title="Panda"><img src="emojis/panda.png" alt="panda"></div>
+            <div class="emoji-choice" data-emoji="bear.png" title="Ayıcık"><img src="emojis/bear.png" alt="bear"></div>
+            <div class="emoji-choice" data-emoji="lion.png" title="Aslan"><img src="emojis/lion.png" alt="lion"></div>
+            <div class="emoji-choice" data-emoji="fox.png" title="Tilki"><img src="emojis/fox.png" alt="fox"></div>
+            <div class="emoji-choice" data-emoji="robot.png" title="Robot"><img src="emojis/robot.png" alt="robot"></div>
+            <div class="emoji-choice" data-emoji="flower.png" title="Çiçek"><img src="emojis/flower.png" alt="flower"></div>
+            <div class="emoji-choice" data-emoji="sunglasses.png" title="Gözlük"><img src="emojis/sunglasses.png" alt="sunglasses"></div>
+            <div class="emoji-choice" data-emoji="grad.png" title="Mezuniyet"><img src="emojis/grad.png" alt="grad"></div>
+            <div class="emoji-choice" data-emoji="heart.png" title="Kalp"><img src="emojis/heart.png" alt="heart"></div>
+            <div class="emoji-choice" data-emoji="rocket.png" title="Roket"><img src="emojis/rocket.png" alt="rocket"></div>
+            <div class="emoji-choice" data-emoji="slight_smile.png" title="Tebessüm"><img src="emojis/slight_smile.png" alt="slight_smile"></div>
           </div>
         </div>
 
-        <!-- Yüz Tanıma & Yeniden Tarama Grubu -->
-        <div class="setting-group" style="margin-top: 6px; padding-top: 12px; border-top: 1px solid var(--border-glass);">
-          <span class="setting-label">Yapay Zeka Yüz Taraması (Yüz Tanı)</span>
+        <!-- Yüz Tanıma & Hassasiyet Grubu (YuNet ONNX & BlazeFace) -->
+        <div class="setting-group" style="margin-top: 12px; padding-top: 14px; border-top: 1px solid var(--border-glass);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <span class="setting-label" style="margin-bottom: 0;">Yapay Zeka Yüz Taraması</span>
+            <span id="scanStatusBadge" class="selected-badge" style="background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); font-size: 0.72rem; padding: 2px 8px; border-radius: 999px;">🧠 YuNet ONNX (Aktif)</span>
+          </div>
+
+          <!-- Yapay Zeka Modeli Seçimi (YuNet ONNX vs BlazeFace) -->
+          <span style="font-size: 0.78rem; color: var(--text-secondary); margin-bottom: 6px; display: block;">Yapay Zeka Modeli</span>
+          <div class="method-grid" style="grid-template-columns: 1fr 1fr; margin-bottom: 12px;">
+            <div class="choice-card selected" data-engine-type="yunet" id="engineYuNet" title="Masaüstü uygulaması ile %100 aynı yapay zeka modeli (WIDER FACE DNN). Kalabalık sınıflardaki en küçük yüzleri bile yakalar.">
+              <span class="choice-icon">🧠</span>
+              <span class="choice-title">YuNet (ONNX)</span>
+              <span class="choice-desc">Masaüstü Kalitesi [Önerilen]</span>
+            </div>
+            <div class="choice-card" data-engine-type="blazeface" id="engineBlazeFace" title="Google BlazeFace modeli. Çok ölçekli parçalı ızgara taramalı hafif web alternatifi.">
+              <span class="choice-icon">⚡</span>
+              <span class="choice-title">BlazeFace (TFJS)</span>
+              <span class="choice-desc">Hafif Web Modeli</span>
+            </div>
+          </div>
+
+          <!-- Tarama Kapsamı Kartları (Derin vs Hızlı) -->
+          <span style="font-size: 0.78rem; color: var(--text-secondary); margin-bottom: 6px; display: block;">Tarama Kapsamı</span>
+          <div class="method-grid" style="grid-template-columns: 1fr 1fr; margin-bottom: 10px;">
+            <div class="choice-card selected" data-scan-mode="deep" id="modeScanDeep" title="Fotoğrafı çok ölçekli ızgaraya bölerek arka sıralardaki en küçük öğrenci yüzlerini dahi tespit eder.">
+              <span class="choice-icon">🎯</span>
+              <span class="choice-title">Derin Tarama</span>
+              <span class="choice-desc">Kalabalık Sınıf / Grup</span>
+            </div>
+            <div class="choice-card" data-scan-mode="fast" id="modeScanFast" title="Tek geçişte hızlı tarama yapar. Portre ve az sayılı fotoğraflar için idealdir.">
+              <span class="choice-icon">⚡</span>
+              <span class="choice-title">Hızlı Tarama</span>
+              <span class="choice-desc">Portre / 1-3 Kişi</span>
+            </div>
+          </div>
+
+          <!-- Hassasiyet Ayarı -->
+          <div class="setting-group" style="margin-bottom: 12px; background: rgba(255, 255, 255, 0.025); padding: 10px 12px; border-radius: var(--radius-sm); border: 1px solid rgba(255, 255, 255, 0.06);">
+            <div class="setting-label" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <span style="font-size: 0.8rem;">Algılama Hassasiyeti</span>
+              <span id="scanSensitivityVal" style="color: var(--accent-primary); font-weight: 700; font-size: 0.82rem;">Yüksek (%85) [Önerilen]</span>
+            </div>
+            <input type="range" id="scanSensitivitySlider" class="range-slider" min="1" max="3" value="2" step="1">
+            <div style="display: flex; justify-content: space-between; font-size: 0.68rem; color: var(--text-muted); margin-top: 4px;">
+              <span>Dengeli</span>
+              <span style="color: #60a5fa; font-weight: 600;">Yüksek</span>
+              <span>Maksimum</span>
+            </div>
+          </div>
+
+          <!-- Tarama Tetikleme Butonları -->
           <div style="display: flex; gap: 8px;">
-            <button id="btnScanCurrentTab" class="btn-picker" style="flex: 1; justify-content: center; font-size: 0.82rem; padding: 10px 8px;">
+            <button id="btnScanCurrentTab" class="btn-picker" style="flex: 1; justify-content: center; font-size: 0.82rem; padding: 10px 8px;" title="Seçili fotoğrafı yeni ayarlarla yeniden tara">
               🔍 Bu Fotoğrafı Tara
             </button>
-            <button id="btnScanAllTab" class="btn-picker" style="flex: 1; justify-content: center; font-size: 0.82rem; padding: 10px 8px;">
+            <button id="btnScanAllTab" class="btn-picker" style="flex: 1; justify-content: center; font-size: 0.82rem; padding: 10px 8px;" title="Tüm fotoğrafları yeni ayarlarla yeniden tara">
               👥 Tümünü Tara
             </button>
           </div>
@@ -253,12 +346,17 @@
       <!-- Sekme 2: MEB & Sosyal Medya Şablonları -->
       <div id="tabPreset" class="tab-content">
         <div class="setting-group">
-          <span class="setting-label">Resmi Standart Boyut</span>
+          <span class="setting-label">Boyut ve Kırpma Şablonu</span>
           <div class="preset-grid">
-            <div class="choice-card selected" data-preset="meb_manset">
+            <div class="choice-card selected" data-preset="original">
+              <span class="choice-icon">📐</span>
+              <span class="choice-title">Orijinal Boyut</span>
+              <span class="choice-desc">Kırpma Yok (Tam Resim)</span>
+            </div>
+            <div class="choice-card" data-preset="meb_manset">
               <span class="choice-icon">📰</span>
               <span class="choice-title">MEB Manşet</span>
-              <span class="choice-desc">1200×568 (19:9)</span>
+              <span class="choice-desc">1200×568 (19:9 Kırpma)</span>
             </div>
             <div class="choice-card" data-preset="eokul">
               <span class="choice-icon">📝</span>
@@ -280,11 +378,6 @@
               <span class="choice-title">Hikaye / Reels</span>
               <span class="choice-desc">1080×1920 (9:16)</span>
             </div>
-            <div class="choice-card" data-preset="original">
-              <span class="choice-icon">📐</span>
-              <span class="choice-title">Orijinal Boyut</span>
-              <span class="choice-desc">Değiştirme</span>
-            </div>
           </div>
         </div>
       </div>
@@ -300,11 +393,60 @@
         </div>
 
         <div class="setting-group" style="margin-top: 8px;">
-          <span class="setting-label">Şeffaf Okul Logosu (PNG)</span>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <span class="setting-label" style="margin-bottom: 0;">Okul Logosu / Görsel (PNG, JPG)</span>
+            <button id="btnRemoveLogo" class="canvas-mini-btn danger" style="display: none; padding: 3px 8px; font-size: 0.7rem;">
+              🗑️ Logoyu Kaldır
+            </button>
+          </div>
           <label class="btn-picker" style="justify-content: center;">
-            📁 Okul Logosu Seç
-            <input type="file" id="logoInput" accept="image/png" style="display: none;">
+            📁 Logo / Resim Seç (PNG, JPG)
+            <input type="file" id="logoInput" accept="image/png,image/jpeg,image/jpg,image/webp" style="display: none;">
           </label>
+          <span id="logoFileName" style="font-size: 0.74rem; color: var(--accent-primary); margin-top: 4px; display: none;"></span>
+        </div>
+
+        <!-- Saydamlık Slider'ı -->
+        <div class="setting-group" style="margin-top: 8px;">
+          <div class="setting-label">
+            <span>Logo & Filigran Saydamlığı</span>
+            <span id="watermarkOpacityVal">%85</span>
+          </div>
+          <input type="range" id="watermarkOpacitySlider" class="range-slider" min="10" max="100" value="85">
+        </div>
+
+        <!-- Logo Boyut Slider'ı -->
+        <div id="logoScaleGroup" class="setting-group" style="margin-top: 8px; display: none;">
+          <div class="setting-label">
+            <span>Logo Boyutu</span>
+            <span id="logoScaleVal">%18</span>
+          </div>
+          <input type="range" id="logoScaleSlider" class="range-slider" min="5" max="45" value="18">
+        </div>
+
+        <!-- Logo ve Filigran Konum Kontrolleri -->
+        <div class="setting-group" style="margin-top: 8px;">
+          <span class="setting-label">Konumlandırma (İstediğiniz Yere Taşıyın)</span>
+          <div class="watermark-pos-grid">
+            <button type="button" class="pos-btn" data-pos="top-left" title="Sol Üst">↖ Sol Üst</button>
+            <button type="button" class="pos-btn" data-pos="top-right" title="Sağ Üst">↗ Sağ Üst</button>
+            <button type="button" class="pos-btn" data-pos="center" title="Merkez">🎯 Merkez</button>
+            <button type="button" class="pos-btn" data-pos="bottom-left" title="Sol Alt">↙ Sol Alt</button>
+            <button type="button" class="pos-btn active" data-pos="bottom-right" title="Sağ Alt (Varsayılan)">↘ Sağ Alt</button>
+          </div>
+          <div style="display: flex; gap: 10px; margin-top: 8px;">
+            <div style="flex: 1;">
+              <span style="font-size: 0.72rem; color: var(--text-muted);">Yatay (X)</span>
+              <input type="range" id="logoXSlider" class="range-slider" min="0" max="100" value="88">
+            </div>
+            <div style="flex: 1;">
+              <span style="font-size: 0.72rem; color: var(--text-muted);">Dikey (Y)</span>
+              <input type="range" id="logoYSlider" class="range-slider" min="0" max="100" value="88">
+            </div>
+          </div>
+          <span style="font-size: 0.73rem; color: var(--text-secondary); margin-top: 6px; display: block;">
+            💡 <b>İpucu:</b> Tuval üzerindeki logoya doğrudan dokunup sürükleyerek de istediğiniz yere bırakabilirsiniz.
+          </span>
         </div>
       </div>
     </div>
@@ -337,6 +479,7 @@
   </div>
 
   <!-- Kütüphaneler (Yerel & Çevrimdışı Uyumlu) -->
+  <script src="js/ort.min.js"></script>
   <script src="js/tf.min.js"></script>
   <script src="js/blazeface.min.js"></script>
   <script src="js/jszip.min.js"></script>
