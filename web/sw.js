@@ -1,5 +1,5 @@
 // YüzGizle PWA Service Worker (Çevrimdışı Önbellekleme)
-const CACHE_NAME = 'yuzgizle-pwa-v1.3.0';
+const CACHE_NAME = 'yuzgizle-pwa-v1.3.1';
 
 const ASSETS_TO_CACHE = [
   './',

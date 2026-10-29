@@ -244,6 +244,10 @@ cv::Mat ImageUtils::applyWatermark(const cv::Mat& src, const ProcessSettings& se
         x = (imgW - blockW) / 2;
         y = (imgH - blockH) / 2;
         break;
+    case WatermarkPosition::Custom:
+        x = static_cast<int>((imgW - blockW) * std::clamp(settings.watermarkCustomXRatio, 0.0, 1.0));
+        y = static_cast<int>((imgH - blockH) * std::clamp(settings.watermarkCustomYRatio, 0.0, 1.0));
+        break;
     }
 
     x = std::max(0, x);

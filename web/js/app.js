@@ -1206,13 +1206,13 @@ function selectImage(index) {
  */
 function getCanvasTransform(current, canvas) {
   const targetDims = calculatePresetDimensions(current.img.width, current.img.height, state.preset);
-  canvas.width = targetDims.width;
-  canvas.height = targetDims.height;
+  const canvasW = targetDims.width;
+  const canvasH = targetDims.height;
 
   // Cover modu: Görüntü hedef en/boy oranına orantılı olarak sığdırılır
-  const scale = Math.max(canvas.width / current.img.width, canvas.height / current.img.height);
-  const sw = canvas.width / scale;
-  const sh = canvas.height / scale;
+  const scale = Math.max(canvasW / current.img.width, canvasH / current.img.height);
+  const sw = canvasW / scale;
+  const sh = canvasH / scale;
   const sx = (current.img.width - sw) / 2;
   const sy = (current.img.height - sh) / 2;
 
@@ -1223,8 +1223,10 @@ function getCanvasTransform(current, canvas) {
  * Orijinal görüntü piksel koordinatını Tuval piksel koordinatına dönüştürür
  */
 function imageToCanvasRect(face, transform, canvas) {
-  const scaleX = canvas.width / transform.sw;
-  const scaleY = canvas.height / transform.sh;
+  const canvasW = (canvas && canvas.width > 0) ? canvas.width : transform.targetDims.width;
+  const canvasH = (canvas && canvas.height > 0) ? canvas.height : transform.targetDims.height;
+  const scaleX = canvasW / transform.sw;
+  const scaleY = canvasH / transform.sh;
   return {
     x: (face.x - transform.sx) * scaleX,
     y: (face.y - transform.sy) * scaleY,
@@ -1237,8 +1239,10 @@ function imageToCanvasRect(face, transform, canvas) {
  * Tuval piksel koordinatını Orijinal görüntü piksel koordinatına dönüştürür (Manuel Seçim İçin)
  */
 function canvasToImageRect(canvasRect, transform, canvas) {
-  const invScaleX = transform.sw / canvas.width;
-  const invScaleY = transform.sh / canvas.height;
+  const canvasW = (canvas && canvas.width > 0) ? canvas.width : transform.targetDims.width;
+  const canvasH = (canvas && canvas.height > 0) ? canvas.height : transform.targetDims.height;
+  const invScaleX = transform.sw / canvasW;
+  const invScaleY = transform.sh / canvasH;
   return {
     x: Math.max(0, transform.sx + canvasRect.x * invScaleX),
     y: Math.max(0, transform.sy + canvasRect.y * invScaleY),
@@ -1256,8 +1260,17 @@ function canvasToImageRect(canvasRect, transform, canvas) {
 function renderPhotoToCanvas(canvas, current, isExport = false) {
   if (!current || !current.img) return;
 
-  const ctx = canvas.getContext('2d');
   const transform = getCanvasTransform(current, canvas);
+  const targetDims = transform.targetDims;
+
+  // Tuval boyutunu yalnızca değiştiyse güncelle (gereksiz sıfırlamayı engeller)
+  if (canvas.width !== targetDims.width || canvas.height !== targetDims.height) {
+    canvas.width = targetDims.width;
+    canvas.height = targetDims.height;
+  }
+
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   // 1. Resmi Çiz
   ctx.drawImage(current.img, transform.sx, transform.sy, transform.sw, transform.sh, 0, 0, canvas.width, canvas.height);
@@ -1352,29 +1365,66 @@ function calculatePresetDimensions(origW, origH, preset) {
 }
 
 function applyHidingStrategy(ctx, x, y, w, h) {
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(x, y, w, h);
-  ctx.clip();
+  if (w <= 0 || h <= 0) return;
+
+  const canvasW = ctx.canvas.width;
+  const canvasH = ctx.canvas.height;
+  const rx = Math.max(0, Math.floor(x));
+  const ry = Math.max(0, Math.floor(y));
+  const rw = Math.max(1, Math.min(canvasW - rx, Math.ceil(w)));
+  const rh = Math.max(1, Math.min(canvasH - ry, Math.ceil(h)));
+
+  if (rw <= 0 || rh <= 0) return;
 
   if (state.method === 'blur') {
-    ctx.filter = `blur(${state.blurStrength}px)`;
-    ctx.drawImage(ctx.canvas, 0, 0);
+    const blurRadius = Math.max(2, state.blurStrength || 30);
+    // Doğal yumuşak geçiş için güvenli kenarlık payı
+    const pad = Math.min(30, Math.round(blurRadius * 0.75));
+    const sx = Math.max(0, rx - pad);
+    const sy = Math.max(0, ry - pad);
+    const sw = Math.min(canvasW - sx, rw + pad * 2);
+    const sh = Math.min(canvasH - sy, rh + pad * 2);
+
+    if (sw > 0 && sh > 0) {
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = sw;
+      tempCanvas.height = sh;
+      const tCtx = tempCanvas.getContext('2d');
+      // Sadece gizlenecek yüz bölgesini geçici tuvale kopyala
+      tCtx.drawImage(ctx.canvas, sx, sy, sw, sh, 0, 0, sw, sh);
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(rx, ry, rw, rh);
+      ctx.clip();
+      ctx.filter = `blur(${blurRadius}px)`;
+      ctx.drawImage(tempCanvas, sx, sy, sw, sh);
+      ctx.restore();
+      ctx.filter = 'none';
+    }
   } else if (state.method === 'pixelate') {
     const size = Math.max(4, state.pixelSize);
     const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = Math.max(1, Math.floor(w / size));
-    tempCanvas.height = Math.max(1, Math.floor(h / size));
+    tempCanvas.width = Math.max(1, Math.floor(rw / size));
+    tempCanvas.height = Math.max(1, Math.floor(rh / size));
     const tCtx = tempCanvas.getContext('2d');
     tCtx.imageSmoothingEnabled = false;
-    tCtx.drawImage(ctx.canvas, x, y, w, h, 0, 0, tempCanvas.width, tempCanvas.height);
+    tCtx.drawImage(ctx.canvas, rx, ry, rw, rh, 0, 0, tempCanvas.width, tempCanvas.height);
     
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(rx, ry, rw, rh);
+    ctx.clip();
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(tempCanvas, 0, 0, tempCanvas.width, tempCanvas.height, x, y, w, h);
+    ctx.drawImage(tempCanvas, 0, 0, tempCanvas.width, tempCanvas.height, rx, ry, rw, rh);
+    ctx.restore();
   } else if (state.method === 'blackbar') {
+    ctx.save();
     ctx.fillStyle = '#000000';
-    ctx.fillRect(x, y, w, h);
+    ctx.fillRect(rx, ry, rw, rh);
+    ctx.restore();
   } else if (state.method === 'emoji') {
+    ctx.save();
     let emojiImg = emojiCache[state.selectedEmoji];
     if (!emojiImg) {
       emojiImg = new Image();
@@ -1382,13 +1432,12 @@ function applyHidingStrategy(ctx, x, y, w, h) {
       emojiCache[state.selectedEmoji] = emojiImg;
     }
     if (emojiImg.complete && emojiImg.naturalWidth > 0) {
-      ctx.drawImage(emojiImg, x, y, w, h);
+      ctx.drawImage(emojiImg, rx, ry, rw, rh);
     } else {
       emojiImg.onload = () => renderCurrentCanvas();
     }
+    ctx.restore();
   }
-
-  ctx.restore();
 }
 
 function drawFaceGuide(ctx, x, y, w, h, face, isSelected = false, activeTool = 'add', faceIdx = 0) {
@@ -1661,8 +1710,10 @@ function setupCanvasInteractions() {
 
   const getCanvasPixelCoords = (clientX, clientY) => {
     const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
+    const rectW = rect.width || canvas.width || 1;
+    const rectH = rect.height || canvas.height || 1;
+    const scaleX = canvas.width / rectW;
+    const scaleY = canvas.height / rectH;
     return {
       x: (clientX - rect.left) * scaleX,
       y: (clientY - rect.top) * scaleY
@@ -1750,6 +1801,11 @@ function setupCanvasInteractions() {
       state.panX = clientX - state.panStartX;
       state.panY = clientY - state.panStartY;
       applyCanvasTransform();
+      return;
+    }
+
+    // Kullanıcı tuval üzerinde sürükleme veya taşıma yapmıyorsa gereksiz hesaplama yapma
+    if (!state.isPointerDown && !state.isMovingLogo && !state.isResizing && !state.isMovingFace) {
       return;
     }
 

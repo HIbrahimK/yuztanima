@@ -7,5 +7,19 @@
         <file>emojis/grin.png</file>
         <file>emojis/star.png</file>
         <file>emojis/mask.png</file>
+        <file>emojis/party.png</file>
+        <file>emojis/sunglasses.png</file>
+        <file>emojis/angel.png</file>
+        <file>emojis/heart.png</file>
+        <file>emojis/cat.png</file>
+        <file>emojis/dog.png</file>
+        <file>emojis/panda.png</file>
+        <file>emojis/bear.png</file>
+        <file>emojis/lion.png</file>
+        <file>emojis/fox.png</file>
+        <file>emojis/robot.png</file>
+        <file>emojis/rocket.png</file>
+        <file>emojis/flower.png</file>
+        <file>emojis/grad.png</file>
     </qresource>
 </RCC>

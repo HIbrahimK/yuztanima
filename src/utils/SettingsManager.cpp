@@ -55,6 +55,8 @@ void SettingsManager::saveSettings(const ProcessSettings& settings)
     m_settings.setValue(QStringLiteral("imagePath"), settings.watermarkImagePath);
     m_settings.setValue(QStringLiteral("text"), settings.watermarkText);
     m_settings.setValue(QStringLiteral("position"), static_cast<int>(settings.watermarkPosition));
+    m_settings.setValue(QStringLiteral("customXRatio"), settings.watermarkCustomXRatio);
+    m_settings.setValue(QStringLiteral("customYRatio"), settings.watermarkCustomYRatio);
     m_settings.setValue(QStringLiteral("opacity"), settings.watermarkOpacity);
     m_settings.setValue(QStringLiteral("scalePercent"), settings.watermarkScalePercent);
     m_settings.setValue(QStringLiteral("textBackground"), settings.watermarkTextBackground);
@@ -113,6 +115,8 @@ ProcessSettings SettingsManager::loadSettings() const
     settings.watermarkText = m_settings.value(QStringLiteral("text"), QString()).toString();
     settings.watermarkPosition = static_cast<WatermarkPosition>(
         m_settings.value(QStringLiteral("position"), static_cast<int>(WatermarkPosition::BottomRight)).toInt());
+    settings.watermarkCustomXRatio = m_settings.value(QStringLiteral("customXRatio"), 0.88).toDouble();
+    settings.watermarkCustomYRatio = m_settings.value(QStringLiteral("customYRatio"), 0.88).toDouble();
     settings.watermarkOpacity = m_settings.value(QStringLiteral("opacity"), 85).toInt();
     settings.watermarkScalePercent = m_settings.value(QStringLiteral("scalePercent"), 15).toInt();
     settings.watermarkTextBackground = m_settings.value(QStringLiteral("textBackground"), true).toBool();

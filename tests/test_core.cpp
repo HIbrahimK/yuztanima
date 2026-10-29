@@ -203,6 +203,14 @@ private slots:
         cv::Mat withBoth = ImageUtils::applyWatermark(sample, settings);
         QCOMPARE(withBoth.cols, sample.cols);
         QCOMPARE(withBoth.rows, sample.rows);
+
+        // Serbest konum (Custom) testi
+        settings.watermarkPosition = WatermarkPosition::Custom;
+        settings.watermarkCustomXRatio = 0.45;
+        settings.watermarkCustomYRatio = 0.55;
+        cv::Mat withCustom = ImageUtils::applyWatermark(sample, settings);
+        QCOMPARE(withCustom.cols, sample.cols);
+        QCOMPARE(withCustom.rows, sample.rows);
     }
 
     void testBatchProcessorWithManualOverrides() {

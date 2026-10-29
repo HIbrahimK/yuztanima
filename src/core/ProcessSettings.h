@@ -55,7 +55,8 @@ enum class WatermarkPosition {
     BottomLeft,    ///< Sol Alt
     TopRight,      ///< Sağ Üst
     TopLeft,       ///< Sol Üst
-    Center         ///< Merkez
+    Center,        ///< Merkez
+    Custom         ///< Tuval üzerinde serbest konum
 };
 
 /// Manuel veya algılanmış yüz bölgesi
@@ -115,6 +116,8 @@ struct ProcessSettings {
     QString watermarkImagePath;         ///< Okul logosu dosya yolu (şeffaf PNG/SVG)
     QString watermarkText;              ///< Filigran metni (örn: "T.C. Millî Eğitim Bakanlığı")
     WatermarkPosition watermarkPosition = WatermarkPosition::BottomRight;
+    double watermarkCustomXRatio = 0.88; ///< Tuval üzerinde serbest X konumu (0.0 - 1.0)
+    double watermarkCustomYRatio = 0.88; ///< Tuval üzerinde serbest Y konumu (0.0 - 1.0)
     int watermarkOpacity = 85;          ///< Filigran opaklığı (%10 - %100)
     int watermarkScalePercent = 15;     ///< Logo genişliğinin fotoğraf genişliğine oranı (%5 - %40)
     bool watermarkTextBackground = true;///< Metin için yarı saydam kontrast arka planı

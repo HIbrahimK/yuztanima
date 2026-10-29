@@ -114,6 +114,8 @@ private:
     QComboBox* m_cmbLanguage = nullptr;
 
     QString m_selectedEmojiPath;
+    double m_customXRatio = 0.88;
+    double m_customYRatio = 0.88;
 };
 
 #endif // SETTINGS_DIALOG_H

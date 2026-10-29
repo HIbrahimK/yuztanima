@@ -38,7 +38,8 @@ void InteractiveImageCanvas::setImage(const cv::Mat& mat, const QList<FaceItem>&
     m_mat = mat.clone();
     m_pixmap = ImageUtils::matToQPixmap(mat);
     m_faces = faces;
-    m_isDrawing = false;
+    m_selectedFaceIndex = -1;
+    m_dragMode = DragNone;
     setScaleFactor(m_scaleFactor);
     update();
 }
@@ -48,8 +49,139 @@ void InteractiveImageCanvas::clear()
     m_mat = cv::Mat();
     m_pixmap = QPixmap();
     m_faces.clear();
-    m_isDrawing = false;
+    m_selectedFaceIndex = -1;
+    m_dragMode = DragNone;
     update();
+}
+
+void InteractiveImageCanvas::setSettings(const ProcessSettings& settings)
+{
+    m_settings = settings;
+    update();
+}
+
+void InteractiveImageCanvas::setSelectedFaceIndex(int idx)
+{
+    if (m_selectedFaceIndex != idx) {
+        m_selectedFaceIndex = idx;
+        emit selectedFaceChanged(m_selectedFaceIndex);
+        update();
+    }
+}
+
+void InteractiveImageCanvas::deleteSelectedFace()
+{
+    if (m_selectedFaceIndex >= 0 && m_selectedFaceIndex < m_faces.size()) {
+        m_faces.removeAt(m_selectedFaceIndex);
+        m_selectedFaceIndex = -1;
+        emit facesChanged(m_faces);
+        emit selectedFaceChanged(-1);
+        update();
+    }
+}
+
+InteractiveImageCanvas::HandleType InteractiveImageCanvas::hitTestHandle(const QPoint& wPos, const QRectF& widgetBox, double radius) const
+{
+    if (QLineF(wPos, widgetBox.topLeft()).length() <= radius) return HandleTL;
+    if (QLineF(wPos, widgetBox.topRight()).length() <= radius) return HandleTR;
+    if (QLineF(wPos, widgetBox.bottomLeft()).length() <= radius) return HandleBL;
+    if (QLineF(wPos, widgetBox.bottomRight()).length() <= radius) return HandleBR;
+    return HandleNone;
+}
+
+QRectF InteractiveImageCanvas::getWatermarkImageRect() const
+{
+    if (m_mat.empty() || m_settings.watermarkType == WatermarkType::None) {
+        return QRectF();
+    }
+
+    bool hasImage = (m_settings.watermarkType == WatermarkType::Image || m_settings.watermarkType == WatermarkType::Both)
+                    && !m_settings.watermarkImagePath.isEmpty()
+                    && QFile::exists(m_settings.watermarkImagePath);
+    bool hasText = (m_settings.watermarkType == WatermarkType::Text || m_settings.watermarkType == WatermarkType::Both)
+                   && !m_settings.watermarkText.trimmed().isEmpty();
+
+    if (!hasImage && !hasText) {
+        return QRectF();
+    }
+
+    int imgW = m_mat.cols;
+    int imgH = m_mat.rows;
+    int margin = std::max(12, imgW / 50);
+
+    int logoW = 0;
+    int logoH = 0;
+    if (hasImage) {
+        QPixmap logoPm(m_settings.watermarkImagePath);
+        if (!logoPm.isNull()) {
+            int targetLogoW = std::clamp(imgW * m_settings.watermarkScalePercent / 100, 24, imgW / 2);
+            double aspect = static_cast<double>(logoPm.height()) / logoPm.width();
+            logoW = targetLogoW;
+            logoH = static_cast<int>(targetLogoW * aspect);
+        } else {
+            hasImage = false;
+        }
+    }
+
+    QString text = m_settings.watermarkText.trimmed();
+    QFont font(QStringLiteral("Segoe UI, Arial, sans-serif"));
+    int fontSize = std::clamp(imgW / 55, 11, 48);
+    font.setPixelSize(fontSize);
+    font.setBold(true);
+    QFontMetrics fm(font);
+    int textW = fm.boundingRect(text).width();
+    int textH = fm.boundingRect(text).height();
+
+    int blockW = 0;
+    int blockH = 0;
+    int spacing = 10;
+    int padX = 10;
+    int padY = 6;
+
+    if (hasImage && hasText) {
+        blockW = padX * 2 + logoW + spacing + textW;
+        blockH = padY * 2 + std::max(logoH, textH);
+    } else if (hasImage) {
+        blockW = logoW;
+        blockH = logoH;
+    } else if (hasText) {
+        blockW = padX * 2 + textW;
+        blockH = padY * 2 + textH;
+    }
+
+    int x = margin;
+    int y = margin;
+    switch (m_settings.watermarkPosition) {
+    case WatermarkPosition::BottomRight:
+        x = imgW - blockW - margin;
+        y = imgH - blockH - margin;
+        break;
+    case WatermarkPosition::BottomLeft:
+        x = margin;
+        y = imgH - blockH - margin;
+        break;
+    case WatermarkPosition::TopRight:
+        x = imgW - blockW - margin;
+        y = margin;
+        break;
+    case WatermarkPosition::TopLeft:
+        x = margin;
+        y = margin;
+        break;
+    case WatermarkPosition::Center:
+        x = (imgW - blockW) / 2;
+        y = (imgH - blockH) / 2;
+        break;
+    case WatermarkPosition::Custom:
+        x = static_cast<int>((imgW - blockW) * std::clamp(m_settings.watermarkCustomXRatio, 0.0, 1.0));
+        y = static_cast<int>((imgH - blockH) * std::clamp(m_settings.watermarkCustomYRatio, 0.0, 1.0));
+        break;
+    }
+
+    x = std::clamp(x, 0, std::max(0, imgW - blockW));
+    y = std::clamp(y, 0, std::max(0, imgH - blockH));
+
+    return QRectF(x, y, blockW, blockH);
 }
 
 void InteractiveImageCanvas::setScaleFactor(double scale)
@@ -67,6 +199,9 @@ void InteractiveImageCanvas::setScaleFactor(double scale)
 void InteractiveImageCanvas::setFaces(const QList<FaceItem>& faces)
 {
     m_faces = faces;
+    if (m_selectedFaceIndex >= m_faces.size()) {
+        m_selectedFaceIndex = -1;
+    }
     update();
 }
 
@@ -112,11 +247,11 @@ void InteractiveImageCanvas::paintEvent(QPaintEvent* /*event*/)
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
 
-    // Orijinal görüntüyü çiz
+    // 1. Orijinal görüntüyü çiz
     QRect targetRect(0, 0, width(), height());
     painter.drawPixmap(targetRect, m_pixmap);
 
-    // Yüz kutularını çiz
+    // 2. Yüz kutularını çiz
     QFont font = painter.font();
     font.setPointSize(std::max(8, static_cast<int>(10 * std::sqrt(m_scaleFactor))));
     font.setBold(true);
@@ -126,8 +261,37 @@ void InteractiveImageCanvas::paintEvent(QPaintEvent* /*event*/)
         const auto& f = m_faces[i];
         QRectF rect = imageToWidget(f.toCvRect());
 
-        if (f.enabled) {
-            // Gizlenecek yüz (Öğrenci) - Zarif Yeşil Çerçeve (Etiket kutunun dışına taşmaz)
+        if (i == m_selectedFaceIndex) {
+            // Seçili Alan: Parlak Cam Göbeği / Sky Blue Çerçeve, Gölge & Köşe Tutamaçları
+            QColor blueBorder(56, 189, 248, 255);
+            QColor blueFill(56, 189, 248, 30);
+            painter.setPen(QPen(blueBorder, 2.5, Qt::DashLine));
+            painter.setBrush(blueFill);
+            painter.drawRoundedRect(rect, 4, 4);
+
+            // 4 Köşe Tutamacı (Geniş & Dokunmatik Dostu Dairesel Tutamaçlar)
+            const double handleRadius = 7.0;
+            const QPointF corners[4] = {
+                rect.topLeft(),
+                rect.topRight(),
+                rect.bottomLeft(),
+                rect.bottomRight()
+            };
+            for (int c = 0; c < 4; ++c) {
+                painter.setPen(QPen(QColor(2, 132, 199), 2.5, Qt::SolidLine));
+                painter.setBrush(Qt::white);
+                painter.drawEllipse(corners[c], handleRadius, handleRadius);
+            }
+
+            // Başlık Rozeti ve Boyutlandırma Bilgisi
+            QRectF badgeRect(rect.left(), std::max(0.0, rect.top() - 24.0), 160.0, 22.0);
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(QColor(14, 165, 233, 235));
+            painter.drawRoundedRect(badgeRect, 4, 4);
+            painter.setPen(Qt::white);
+            painter.drawText(badgeRect, Qt::AlignCenter, tr("🎯 Alan #%1 (↔ Boyutlandır)").arg(i + 1));
+        } else if (f.enabled) {
+            // Gizlenecek yüz (Öğrenci) - Yeşil Çerçeve
             QColor greenBorder(76, 175, 80, 240);
             QColor greenFill(76, 175, 80, 30);
 
@@ -163,17 +327,87 @@ void InteractiveImageCanvas::paintEvent(QPaintEvent* /*event*/)
         }
     }
 
-    // Kullanıcı manuel alan çiziyorsa elastik seçim kutusu
-    if (m_isDrawing && (m_mode == ModeAddManual || !m_isPanning)) {
+    // 3. Okul Logosu / Filigran (Tuval Üzerinde Önizleme & Serbest Sürükleme)
+    QRectF wmImgRect = getWatermarkImageRect();
+    if (wmImgRect.isValid() && !wmImgRect.isEmpty()) {
+        QRectF wmWidgetRect(wmImgRect.x() * m_scaleFactor,
+                            wmImgRect.y() * m_scaleFactor,
+                            wmImgRect.width() * m_scaleFactor,
+                            wmImgRect.height() * m_scaleFactor);
+
+        // Kontrast arka planı
+        if (m_settings.watermarkTextBackground) {
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(QColor(0, 0, 0, 160));
+            painter.drawRoundedRect(wmWidgetRect, 6, 6);
+        }
+
+        // Logo görselini çiz
+        bool hasImage = (m_settings.watermarkType == WatermarkType::Image || m_settings.watermarkType == WatermarkType::Both)
+                        && !m_settings.watermarkImagePath.isEmpty() && QFile::exists(m_settings.watermarkImagePath);
+        bool hasText = (m_settings.watermarkType == WatermarkType::Text || m_settings.watermarkType == WatermarkType::Both)
+                       && !m_settings.watermarkText.trimmed().isEmpty();
+
+        double opacity = std::clamp(m_settings.watermarkOpacity, 10, 100) / 100.0;
+        painter.save();
+        painter.setOpacity(opacity);
+
+        int padX = static_cast<int>(10 * m_scaleFactor);
+        int curX = static_cast<int>(wmWidgetRect.left() + padX);
+
+        if (hasImage) {
+            QPixmap logoPm(m_settings.watermarkImagePath);
+            if (!logoPm.isNull()) {
+                int targetLogoW = std::clamp(static_cast<int>(m_mat.cols * m_settings.watermarkScalePercent / 100 * m_scaleFactor),
+                                             16, static_cast<int>(wmWidgetRect.width()));
+                logoPm = logoPm.scaledToWidth(targetLogoW, Qt::SmoothTransformation);
+                int logoY = static_cast<int>(wmWidgetRect.top() + (wmWidgetRect.height() - logoPm.height()) / 2);
+                painter.drawPixmap(curX, logoY, logoPm);
+                curX += logoPm.width() + static_cast<int>(10 * m_scaleFactor);
+            }
+        }
+
+        if (hasText) {
+            QString text = m_settings.watermarkText.trimmed();
+            QFont wmFont(QStringLiteral("Segoe UI, Arial, sans-serif"));
+            int fontSize = std::clamp(static_cast<int>(m_mat.cols / 55 * m_scaleFactor), 9, 36);
+            wmFont.setPixelSize(fontSize);
+            wmFont.setBold(true);
+            painter.setFont(wmFont);
+            painter.setPen(Qt::white);
+            QFontMetrics fm(wmFont);
+            int textY = static_cast<int>(wmWidgetRect.top() + (wmWidgetRect.height() - fm.height()) / 2 + fm.ascent());
+            painter.drawText(curX, textY, text);
+        }
+        painter.restore();
+
+        // Tuval üzerinde serbest sürüklenebilir olduğunu belirten zarif çerçeve ve rozet
+        painter.setPen(QPen(QColor(14, 165, 233, 220), 1.5, Qt::DashLine));
+        painter.setBrush(QColor(14, 165, 233, 20));
+        painter.drawRoundedRect(wmWidgetRect, 6, 6);
+
+        QRectF logoBadge(wmWidgetRect.left(), std::max(0.0, wmWidgetRect.top() - 20.0), 120.0, 18.0);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(QColor(14, 165, 233, 230));
+        painter.drawRoundedRect(logoBadge, 3, 3);
+        painter.setPen(Qt::white);
+        QFont miniFont = painter.font();
+        miniFont.setPointSize(8);
+        painter.setFont(miniFont);
+        painter.drawText(logoBadge, Qt::AlignCenter, tr("📍 Logo (Sürükle)"));
+    }
+
+    // 4. Kullanıcı manuel alan çiziyorsa elastik seçim kutusu
+    if (m_dragMode == DragDrawManual) {
         QRectF drawBox(m_drawStart * m_scaleFactor, m_drawCurrent * m_scaleFactor);
         painter.setPen(QPen(QColor(33, 150, 243, 230), 2.0, Qt::DashLine));
         painter.setBrush(QColor(33, 150, 243, 50));
         painter.drawRect(drawBox.normalized());
     }
 
-    // Manuel kırpma çerçevesi ve 3'ler kuralı kılavuz çizgileri
+    // 5. Manuel kırpma çerçevesi ve 3'ler kuralı kılavuz çizgileri
     QRectF cropBox;
-    if (m_isDrawing && m_mode == ModeCropRegion) {
+    if (m_dragMode == DragCrop) {
         cropBox = QRectF(m_drawStart * m_scaleFactor, m_drawCurrent * m_scaleFactor).normalized();
     } else if (!m_selectedCropRect.isEmpty()) {
         cropBox = QRectF(m_selectedCropRect.x() * m_scaleFactor,
@@ -183,19 +417,16 @@ void InteractiveImageCanvas::paintEvent(QPaintEvent* /*event*/)
     }
 
     if (cropBox.isValid() && cropBox.width() > 5 && cropBox.height() > 5) {
-        // Dış kısmı yarı saydam maskele
         QRegion outsideRegion(rect());
         outsideRegion = outsideRegion.subtracted(QRegion(cropBox.toRect()));
         painter.setClipRegion(outsideRegion);
         painter.fillRect(rect(), QColor(0, 0, 0, 140));
         painter.setClipping(false);
 
-        // Kırpma çerçevesi
         painter.setPen(QPen(QColor(0, 229, 255), 2.0, Qt::SolidLine));
         painter.setBrush(Qt::NoBrush);
         painter.drawRect(cropBox);
 
-        // 1/3 kılavuz çizgileri
         painter.setPen(QPen(QColor(0, 229, 255, 100), 1.0, Qt::DashLine));
         double x1 = cropBox.left() + cropBox.width() / 3.0;
         double x2 = cropBox.left() + 2.0 * cropBox.width() / 3.0;
@@ -206,7 +437,6 @@ void InteractiveImageCanvas::paintEvent(QPaintEvent* /*event*/)
         painter.drawLine(QPointF(cropBox.left(), y1), QPointF(cropBox.right(), y1));
         painter.drawLine(QPointF(cropBox.left(), y2), QPointF(cropBox.right(), y2));
 
-        // Boyut rozeti
         int imgW = static_cast<int>(cropBox.width() / m_scaleFactor);
         int imgH = static_cast<int>(cropBox.height() / m_scaleFactor);
         QString dimText = tr("✂️ Kırp: %1 × %2 px").arg(imgW).arg(imgH);
@@ -231,6 +461,13 @@ void InteractiveImageCanvas::wheelEvent(QWheelEvent* event)
 
 void InteractiveImageCanvas::keyPressEvent(QKeyEvent* event)
 {
+    if (event->key() == Qt::Key_Delete || event->key() == Qt::Key_Backspace) {
+        if (m_selectedFaceIndex >= 0 && m_selectedFaceIndex < m_faces.size()) {
+            deleteSelectedFace();
+            event->accept();
+            return;
+        }
+    }
     if (event->key() == Qt::Key_Control) {
         setCursor(Qt::CrossCursor);
     } else if (event->key() == Qt::Key_Shift) {
@@ -261,7 +498,13 @@ void InteractiveImageCanvas::mousePressEvent(QMouseEvent* event)
             int idx = findFaceIndexAt(imgPos);
             if (idx >= 0) {
                 m_faces.removeAt(idx);
+                if (m_selectedFaceIndex == idx) {
+                    m_selectedFaceIndex = -1;
+                } else if (m_selectedFaceIndex > idx) {
+                    m_selectedFaceIndex--;
+                }
                 emit facesChanged(m_faces);
+                emit selectedFaceChanged(m_selectedFaceIndex);
                 update();
                 return;
             }
@@ -269,7 +512,7 @@ void InteractiveImageCanvas::mousePressEvent(QMouseEvent* event)
 
         // 2. Kırpma modu
         if (m_mode == ModeCropRegion) {
-            m_isDrawing = true;
+            m_dragMode = DragCrop;
             m_drawStart = imgPos;
             m_drawCurrent = imgPos;
             m_selectedCropRect = QRect();
@@ -277,29 +520,86 @@ void InteractiveImageCanvas::mousePressEvent(QMouseEvent* event)
             return;
         }
 
-        // 3. CTRL ile seçim: Yeni alan çizmeye başla
+        // 3. CTRL ile seçim veya ModeAddManual: Yeni manuel alan çizmeye başla
         if (ctrlHeld) {
-            m_isDrawing = true;
+            m_dragMode = DragDrawManual;
             m_drawStart = imgPos;
             m_drawCurrent = imgPos;
             update();
             return;
         }
 
-        // 4. Normal sol tıklama:
-        // Eğer bir yüzün üzerine tıklandıysa durumunu değiştir (Gizle <-> Muaf)
-        int idx = findFaceIndexAt(imgPos);
-        if (idx >= 0) {
-            m_faces[idx].enabled = !m_faces[idx].enabled;
-            emit facesChanged(m_faces);
+        // 4. Seçili alanın köşe tutamaçları (Resize handles) kontrolü
+        if (m_selectedFaceIndex >= 0 && m_selectedFaceIndex < m_faces.size()) {
+            QRectF selBox = imageToWidget(m_faces[m_selectedFaceIndex].toCvRect());
+            HandleType h = hitTestHandle(event->pos(), selBox, 10.0);
+            if (h != HandleNone) {
+                if (h == HandleTL) m_dragMode = DragResizeTL;
+                else if (h == HandleTR) m_dragMode = DragResizeTR;
+                else if (h == HandleBL) m_dragMode = DragResizeBL;
+                else if (h == HandleBR) m_dragMode = DragResizeBR;
+
+                m_dragStartImgPos = imgPos;
+                m_dragOrigFace = m_faces[m_selectedFaceIndex];
+                return;
+            }
+
+            // Seçili alanın içine tıklandıysa: Serbest Taşıma (Move Face)
+            if (selBox.contains(event->pos())) {
+                m_dragMode = DragMoveFace;
+                m_dragStartImgPos = imgPos;
+                m_dragOrigFace = m_faces[m_selectedFaceIndex];
+                setCursor(Qt::SizeAllCursor);
+                return;
+            }
+        }
+
+        // 5. Logo / Filigran kontrolü (Logo üzerine tıklandıysa serbest taşıma başlat)
+        QRectF wmImgRect = getWatermarkImageRect();
+        if (wmImgRect.isValid() && wmImgRect.contains(imgPos)) {
+            m_dragMode = DragMoveLogo;
+            m_dragStartImgPos = imgPos;
+            if (m_settings.watermarkPosition != WatermarkPosition::Custom) {
+                int imgW = m_mat.cols;
+                int imgH = m_mat.rows;
+                double spanX = std::max(1.0, static_cast<double>(imgW - wmImgRect.width()));
+                double spanY = std::max(1.0, static_cast<double>(imgH - wmImgRect.height()));
+                m_origCustomXRatio = wmImgRect.x() / spanX;
+                m_origCustomYRatio = wmImgRect.y() / spanY;
+            } else {
+                m_origCustomXRatio = m_settings.watermarkCustomXRatio;
+                m_origCustomYRatio = m_settings.watermarkCustomYRatio;
+            }
+            m_settings.watermarkPosition = WatermarkPosition::Custom;
+            m_settings.watermarkCustomXRatio = m_origCustomXRatio;
+            m_settings.watermarkCustomYRatio = m_origCustomYRatio;
+            setCursor(Qt::ClosedHandCursor);
             update();
             return;
         }
 
-        // Boş alana tıklandıysa: Pencere içinde kaydırma (Pan) başlat
-        m_isPanning = true;
+        // 6. Bir yüzün üzerine tıklandıysa:
+        int clickedIdx = findFaceIndexAt(imgPos);
+        if (clickedIdx >= 0) {
+            if (m_selectedFaceIndex == clickedIdx) {
+                // Zaten seçili yüze tekrar tıklandıysa durumunu değiştir (Gizle <-> Muaf)
+                m_faces[clickedIdx].enabled = !m_faces[clickedIdx].enabled;
+                emit facesChanged(m_faces);
+            } else {
+                m_selectedFaceIndex = clickedIdx;
+                emit selectedFaceChanged(m_selectedFaceIndex);
+            }
+            update();
+            return;
+        }
+
+        // 7. Boş alana tıklandıysa:
+        m_selectedFaceIndex = -1;
+        emit selectedFaceChanged(-1);
+        m_dragMode = DragPanning;
         m_lastMousePos = event->globalPosition().toPoint();
         setCursor(Qt::ClosedHandCursor);
+        update();
     }
 }
 
@@ -309,8 +609,8 @@ void InteractiveImageCanvas::mouseMoveEvent(QMouseEvent* event)
 
     QPointF imgPos = widgetToImage(event->pos());
 
-    // 1. Kaydırma (Pan) yapılıyorsa
-    if (m_isPanning) {
+    // 1. Pan yapılıyorsa
+    if (m_dragMode == DragPanning) {
         QPoint curPos = event->globalPosition().toPoint();
         QPoint delta = curPos - m_lastMousePos;
         m_lastMousePos = curPos;
@@ -318,9 +618,9 @@ void InteractiveImageCanvas::mouseMoveEvent(QMouseEvent* event)
         return;
     }
 
-    // 2. Seçim veya kırpma çiziliyorsa
-    if (m_isDrawing) {
-        if (m_mode == ModeCropRegion && m_targetAspectRatio > 0.001) {
+    // 2. Kırpma veya manuel alan çiziliyorsa
+    if (m_dragMode == DragCrop || m_dragMode == DragDrawManual) {
+        if (m_dragMode == DragCrop && m_targetAspectRatio > 0.001) {
             double dx = imgPos.x() - m_drawStart.x();
             double signX = (dx >= 0) ? 1.0 : -1.0;
             double signY = (imgPos.y() >= m_drawStart.y()) ? 1.0 : -1.0;
@@ -334,34 +634,154 @@ void InteractiveImageCanvas::mouseMoveEvent(QMouseEvent* event)
         return;
     }
 
-    // 3. Gezinme (Hover) imleç durumu
-    int idx = findFaceIndexAt(imgPos);
-    if (event->modifiers() & Qt::ShiftModifier) {
-        setCursor(idx >= 0 ? Qt::PointingHandCursor : Qt::ArrowCursor);
-    } else if (event->modifiers() & Qt::ControlModifier || m_mode == ModeAddManual || m_mode == ModeCropRegion) {
-        setCursor(Qt::CrossCursor);
-    } else if (idx >= 0) {
-        setCursor(Qt::PointingHandCursor);
-    } else {
-        setCursor(Qt::OpenHandCursor);
+    // 3. Seçili Alan Boyutlandırılıyorsa (Resize)
+    if (m_dragMode == DragResizeTL || m_dragMode == DragResizeTR ||
+        m_dragMode == DragResizeBL || m_dragMode == DragResizeBR) {
+        if (m_selectedFaceIndex >= 0 && m_selectedFaceIndex < m_faces.size()) {
+            double dx = imgPos.x() - m_dragStartImgPos.x();
+            double dy = imgPos.y() - m_dragStartImgPos.y();
+            auto& f = m_faces[m_selectedFaceIndex];
+
+            double newX = m_dragOrigFace.x;
+            double newY = m_dragOrigFace.y;
+            double newW = m_dragOrigFace.width;
+            double newH = m_dragOrigFace.height;
+
+            if (m_dragMode == DragResizeBR) {
+                newW = std::max(16.0, m_dragOrigFace.width + dx);
+                newH = std::max(16.0, m_dragOrigFace.height + dy);
+            } else if (m_dragMode == DragResizeTR) {
+                newW = std::max(16.0, m_dragOrigFace.width + dx);
+                double targetH = m_dragOrigFace.height - dy;
+                if (targetH >= 16.0) {
+                    newY = m_dragOrigFace.y + dy;
+                    newH = targetH;
+                }
+            } else if (m_dragMode == DragResizeBL) {
+                double targetW = m_dragOrigFace.width - dx;
+                if (targetW >= 16.0) {
+                    newX = m_dragOrigFace.x + dx;
+                    newW = targetW;
+                }
+                newH = std::max(16.0, m_dragOrigFace.height + dy);
+            } else if (m_dragMode == DragResizeTL) {
+                double targetW = m_dragOrigFace.width - dx;
+                double targetH = m_dragOrigFace.height - dy;
+                if (targetW >= 16.0) {
+                    newX = m_dragOrigFace.x + dx;
+                    newW = targetW;
+                }
+                if (targetH >= 16.0) {
+                    newY = m_dragOrigFace.y + dy;
+                    newH = targetH;
+                }
+            }
+
+            f.x = std::clamp(static_cast<int>(newX), 0, m_mat.cols - 16);
+            f.y = std::clamp(static_cast<int>(newY), 0, m_mat.rows - 16);
+            f.width = std::clamp(static_cast<int>(newW), 16, m_mat.cols - f.x);
+            f.height = std::clamp(static_cast<int>(newH), 16, m_mat.rows - f.y);
+
+            update();
+            return;
+        }
     }
+
+    // 4. Seçili Alan Taşınıyorsa (Move Face)
+    if (m_dragMode == DragMoveFace) {
+        if (m_selectedFaceIndex >= 0 && m_selectedFaceIndex < m_faces.size()) {
+            double dx = imgPos.x() - m_dragStartImgPos.x();
+            double dy = imgPos.y() - m_dragStartImgPos.y();
+            auto& f = m_faces[m_selectedFaceIndex];
+
+            int maxX = std::max(0, m_mat.cols - m_dragOrigFace.width);
+            int maxY = std::max(0, m_mat.rows - m_dragOrigFace.height);
+
+            f.x = std::clamp(static_cast<int>(m_dragOrigFace.x + dx), 0, maxX);
+            f.y = std::clamp(static_cast<int>(m_dragOrigFace.y + dy), 0, maxY);
+
+            update();
+            return;
+        }
+    }
+
+    // 5. Logo / Filigran Taşınıyorsa (Move Logo)
+    if (m_dragMode == DragMoveLogo) {
+        QRectF wmImgRect = getWatermarkImageRect();
+        double spanX = std::max(1.0, static_cast<double>(m_mat.cols - wmImgRect.width()));
+        double spanY = std::max(1.0, static_cast<double>(m_mat.rows - wmImgRect.height()));
+
+        double dx = (imgPos.x() - m_dragStartImgPos.x()) / spanX;
+        double dy = (imgPos.y() - m_dragStartImgPos.y()) / spanY;
+
+        m_settings.watermarkPosition = WatermarkPosition::Custom;
+        m_settings.watermarkCustomXRatio = std::clamp(m_origCustomXRatio + dx, 0.0, 1.0);
+        m_settings.watermarkCustomYRatio = std::clamp(m_origCustomYRatio + dy, 0.0, 1.0);
+
+        update();
+        emit watermarkMoved(m_settings.watermarkCustomXRatio, m_settings.watermarkCustomYRatio);
+        return;
+    }
+
+    // 6. Boşta Gezinme (Hover) İmleç Durumları
+    if (event->modifiers() & Qt::ShiftModifier) {
+        int idx = findFaceIndexAt(imgPos);
+        setCursor(idx >= 0 ? Qt::PointingHandCursor : Qt::ArrowCursor);
+        return;
+    }
+
+    if (event->modifiers() & Qt::ControlModifier || m_mode == ModeAddManual || m_mode == ModeCropRegion) {
+        setCursor(Qt::CrossCursor);
+        return;
+    }
+
+    // Seçili alan tutamaçları veya içi üzerinde mi?
+    if (m_selectedFaceIndex >= 0 && m_selectedFaceIndex < m_faces.size()) {
+        QRectF selBox = imageToWidget(m_faces[m_selectedFaceIndex].toCvRect());
+        HandleType h = hitTestHandle(event->pos(), selBox, 10.0);
+        if (h == HandleTL || h == HandleBR) {
+            setCursor(Qt::SizeFDiagCursor);
+            return;
+        } else if (h == HandleTR || h == HandleBL) {
+            setCursor(Qt::SizeBDiagCursor);
+            return;
+        } else if (selBox.contains(event->pos())) {
+            setCursor(Qt::SizeAllCursor);
+            return;
+        }
+    }
+
+    // Logo üzerinde mi?
+    QRectF wmImgRect = getWatermarkImageRect();
+    if (wmImgRect.isValid() && wmImgRect.contains(imgPos)) {
+        setCursor(Qt::OpenHandCursor);
+        return;
+    }
+
+    // Başka bir yüzün üzerinde mi?
+    int idx = findFaceIndexAt(imgPos);
+    if (idx >= 0) {
+        setCursor(Qt::PointingHandCursor);
+        return;
+    }
+
+    setCursor(Qt::OpenHandCursor);
 }
 
 void InteractiveImageCanvas::mouseReleaseEvent(QMouseEvent* event)
 {
     if (event->button() == Qt::LeftButton) {
-        if (m_isPanning) {
-            m_isPanning = false;
+        if (m_dragMode == DragPanning) {
+            m_dragMode = DragNone;
             setCursor(Qt::OpenHandCursor);
             return;
         }
 
-        if (m_isDrawing) {
-            m_isDrawing = false;
+        if (m_dragMode == DragCrop || m_dragMode == DragDrawManual) {
             QRectF box(m_drawStart, m_drawCurrent);
             box = box.normalized();
 
-            if (m_mode == ModeCropRegion) {
+            if (m_dragMode == DragCrop) {
                 if (box.width() >= 15 && box.height() >= 15 && !m_mat.empty()) {
                     int x = std::clamp(static_cast<int>(box.x()), 0, m_mat.cols - 1);
                     int y = std::clamp(static_cast<int>(box.y()), 0, m_mat.rows - 1);
@@ -370,22 +790,41 @@ void InteractiveImageCanvas::mouseReleaseEvent(QMouseEvent* event)
                     m_selectedCropRect = QRect(x, y, w, h);
                     emit cropRectChanged(m_selectedCropRect);
                 }
-                update();
-                return;
+            } else if (m_dragMode == DragDrawManual) {
+                if (box.width() >= 12 && box.height() >= 12 && !m_mat.empty()) {
+                    int x = std::clamp(static_cast<int>(box.x()), 0, m_mat.cols - 1);
+                    int y = std::clamp(static_cast<int>(box.y()), 0, m_mat.rows - 1);
+                    int w = std::clamp(static_cast<int>(box.width()), 1, m_mat.cols - x);
+                    int h = std::clamp(static_cast<int>(box.height()), 1, m_mat.rows - y);
+
+                    cv::Rect cvRect(x, y, w, h);
+                    m_faces.append(FaceItem::fromCvRect(cvRect, true, true, tr("Manuel Alan")));
+                    m_selectedFaceIndex = m_faces.size() - 1;
+                    emit facesChanged(m_faces);
+                    emit selectedFaceChanged(m_selectedFaceIndex);
+                }
             }
 
-            // Minimum 12x12 piksel alan çizilmişse manuel gizleme alanı olarak ekle
-            if (box.width() >= 12 && box.height() >= 12 && !m_mat.empty()) {
-                int x = std::clamp(static_cast<int>(box.x()), 0, m_mat.cols - 1);
-                int y = std::clamp(static_cast<int>(box.y()), 0, m_mat.rows - 1);
-                int w = std::clamp(static_cast<int>(box.width()), 1, m_mat.cols - x);
-                int h = std::clamp(static_cast<int>(box.height()), 1, m_mat.rows - y);
-
-                cv::Rect cvRect(x, y, w, h);
-                m_faces.append(FaceItem::fromCvRect(cvRect, true, true, tr("Manuel Alan")));
-                emit facesChanged(m_faces);
-            }
+            m_dragMode = DragNone;
             update();
+            return;
+        }
+
+        if (m_dragMode == DragResizeTL || m_dragMode == DragResizeTR ||
+            m_dragMode == DragResizeBL || m_dragMode == DragResizeBR ||
+            m_dragMode == DragMoveFace) {
+            m_dragMode = DragNone;
+            emit facesChanged(m_faces);
+            update();
+            return;
+        }
+
+        if (m_dragMode == DragMoveLogo) {
+            m_dragMode = DragNone;
+            emit watermarkMoved(m_settings.watermarkCustomXRatio, m_settings.watermarkCustomYRatio);
+            setCursor(Qt::OpenHandCursor);
+            update();
+            return;
         }
     }
 }
@@ -397,6 +836,10 @@ void InteractiveImageCanvas::contextMenuEvent(QContextMenuEvent* event)
 
     QMenu menu(this);
     if (idx >= 0) {
+        m_selectedFaceIndex = idx;
+        emit selectedFaceChanged(m_selectedFaceIndex);
+        update();
+
         auto& f = m_faces[idx];
         if (f.enabled) {
             menu.addAction(tr("🛡️ Bu Kişiyi Muaf Tut (Öğretmen / İdareci)"), this, [this, idx]() {
@@ -412,14 +855,9 @@ void InteractiveImageCanvas::contextMenuEvent(QContextMenuEvent* event)
             });
         }
 
-        if (f.isManual) {
-            menu.addSeparator();
-            menu.addAction(tr("🗑️ Bu Manuel Alanı Sil"), this, [this, idx]() {
-                m_faces.removeAt(idx);
-                emit facesChanged(m_faces);
-                update();
-            });
-        }
+        menu.addAction(tr("🗑️ Bu Alanı Sil"), this, [this]() {
+            deleteSelectedFace();
+        });
         menu.addSeparator();
     }
 
@@ -662,6 +1100,8 @@ void ImagePreviewWidget::setupUi()
             this, &ImagePreviewWidget::onZoomStepRequested);
     connect(m_canvasOriginal, &InteractiveImageCanvas::panRequested,
             this, &ImagePreviewWidget::onPanRequested);
+    connect(m_canvasOriginal, &InteractiveImageCanvas::watermarkMoved,
+            this, &ImagePreviewWidget::onWatermarkMoved);
 
     // Senkronize kaydırma çubukları
     connect(m_scrollOriginal->horizontalScrollBar(), &QScrollBar::valueChanged,
@@ -753,6 +1193,7 @@ void ImagePreviewWidget::showPreview(const QString& filePath,
         }
     }
 
+    m_canvasOriginal->setSettings(m_settings);
     m_canvasOriginal->setImage(m_matOriginal, facesToUse);
 
     // İşlenmiş görüntüyü oluştur
@@ -790,6 +1231,7 @@ void ImagePreviewWidget::clearPreview()
 void ImagePreviewWidget::updateSettings(const ProcessSettings& settings)
 {
     m_settings = settings;
+    m_canvasOriginal->setSettings(m_settings);
 
     m_cmbResizePreset->blockSignals(true);
     int pIdx = m_cmbResizePreset->findData(static_cast<int>(m_settings.resizeMode));
@@ -805,6 +1247,15 @@ void ImagePreviewWidget::updateSettings(const ProcessSettings& settings)
     }
 
     renderProcessedPreview();
+}
+
+void ImagePreviewWidget::onWatermarkMoved(double xRatio, double yRatio)
+{
+    m_settings.watermarkPosition = WatermarkPosition::Custom;
+    m_settings.watermarkCustomXRatio = xRatio;
+    m_settings.watermarkCustomYRatio = yRatio;
+    renderProcessedPreview();
+    emit settingsModified(m_settings);
 }
 
 void ImagePreviewWidget::onCropRectSelected(const QRect& cropRect)

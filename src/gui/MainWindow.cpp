@@ -154,6 +154,10 @@ void MainWindow::setupConnections()
         m_settings.maintainAspectRatio = maintain;
         m_settings.resizeMode = ResizeMode::CustomSize;
     });
+    connect(m_previewWidget, &ImagePreviewWidget::settingsModified, this, [this](const ProcessSettings& s) {
+        m_settings = s;
+        SettingsManager::instance().saveSettings(m_settings);
+    });
 }
 
 void MainWindow::onAddFiles()

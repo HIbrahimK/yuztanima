@@ -28,6 +28,27 @@ public:
         ModeCropRegion      ///< Dikdörtgen çizerek kırpma alanı seç
     };
 
+    enum HandleType {
+        HandleNone,
+        HandleTL,
+        HandleTR,
+        HandleBL,
+        HandleBR
+    };
+
+    enum DragMode {
+        DragNone,
+        DragMoveFace,
+        DragResizeTL,
+        DragResizeTR,
+        DragResizeBL,
+        DragResizeBR,
+        DragMoveLogo,
+        DragCrop,
+        DragDrawManual,
+        DragPanning
+    };
+
     explicit InteractiveImageCanvas(QWidget* parent = nullptr);
 
     void setImage(const cv::Mat& mat, const QList<FaceItem>& faces);
@@ -37,6 +58,16 @@ public:
 
     QList<FaceItem> faces() const { return m_faces; }
     void setFaces(const QList<FaceItem>& faces);
+
+    void setSettings(const ProcessSettings& settings);
+    ProcessSettings settings() const { return m_settings; }
+
+    int selectedFaceIndex() const { return m_selectedFaceIndex; }
+    void setSelectedFaceIndex(int idx);
+    void deleteSelectedFace();
+
+    QRectF getWatermarkImageRect() const;
+    HandleType hitTestHandle(const QPoint& wPos, const QRectF& widgetBox, double radius = 10.0) const;
 
     void setInteractionMode(InteractionMode mode);
     InteractionMode interactionMode() const { return m_mode; }
@@ -49,6 +80,8 @@ public:
 
 signals:
     void facesChanged(const QList<FaceItem>& faces);
+    void selectedFaceChanged(int index);
+    void watermarkMoved(double xRatio, double yRatio);
     void scaleChanged(double newScale);
     void cropRectChanged(const QRect& cropRect);
     void zoomStepRequested(int steps, const QPoint& mousePos);
@@ -72,14 +105,19 @@ private:
     cv::Mat m_mat;
     QPixmap m_pixmap;
     QList<FaceItem> m_faces;
+    ProcessSettings m_settings;
+    int m_selectedFaceIndex = -1;
     double m_scaleFactor = 1.0;
     InteractionMode m_mode = ModeSelectExempt;
 
-    bool m_isDrawing = false;
-    bool m_isPanning = false;
+    DragMode m_dragMode = DragNone;
     QPoint m_lastMousePos;
     QPointF m_drawStart;
     QPointF m_drawCurrent;
+    QPointF m_dragStartImgPos;
+    FaceItem m_dragOrigFace;
+    double m_origCustomXRatio = 0.88;
+    double m_origCustomYRatio = 0.88;
 
     double m_targetAspectRatio = 0.0; // 0.0 = Serbest kırpma, >0 = Sabit oran (örn: 16/10)
     QRect m_selectedCropRect;
@@ -126,12 +164,14 @@ public slots:
     void onApplyCrop();
     void onRevertCrop();
     void openCustomSizeDialog();
+    void onWatermarkMoved(double xRatio, double yRatio);
 
 signals:
     void facesModified(const QString& filePath, const QList<FaceItem>& faces);
     void saveSingleRequested(const QString& filePath);
     void resizePresetChanged(ResizeMode mode);
     void customSizeModified(int width, int height, bool maintainAspect);
+    void settingsModified(const ProcessSettings& settings);
 
 private slots:
     void onSliderValueChanged(int val);

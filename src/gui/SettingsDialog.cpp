@@ -124,21 +124,52 @@ void SettingsDialog::setupUi()
     auto* emojiParams = new QVBoxLayout();
     emojiParams->setContentsMargins(20, 0, 0, 0);
 
-    // Hazır emoji galerisi
-    auto* emojiGalleryLayout = new QHBoxLayout();
-    const QStringList emojiNames = {QStringLiteral("smile"), QStringLiteral("cool"), QStringLiteral("slight_smile"),
-                                    QStringLiteral("grin"), QStringLiteral("star"), QStringLiteral("mask")};
+    // Hazır emoji galerisi (20 MEB Uyumlu Emoji Koleksiyonu)
+    auto* emojiGalleryLayout = new QGridLayout();
+    emojiGalleryLayout->setSpacing(6);
+    const struct EmojiInfo {
+        const char* name;
+        const char* title;
+    } emojiList[] = {
+        {"smile", "Gülen Yüz"},
+        {"cool", "Havalı Gözlüklü"},
+        {"slight_smile", "Tebessüm"},
+        {"grin", "Geniş Gülümseme"},
+        {"star", "Yıldız Gözlü"},
+        {"mask", "Maskeli / Hijyen"},
+        {"party", "Kutlama / Parti"},
+        {"sunglasses", "Güneş Gözlüğü"},
+        {"angel", "Melek"},
+        {"heart", "Kalp Gözlü"},
+        {"cat", "Sevimli Kedi"},
+        {"dog", "Sevimli Köpek"},
+        {"panda", "Panda"},
+        {"bear", "Ayıcık"},
+        {"lion", "Cesur Aslan"},
+        {"fox", "Sevimli Tilki"},
+        {"robot", "Robot / Teknoloji"},
+        {"rocket", "Roket / Bilim"},
+        {"flower", "Çiçek / Doğa"},
+        {"grad", "Mezuniyet Kepi"}
+    };
 
-    for (const auto& name : emojiNames) {
+    int col = 0;
+    int row = 0;
+    for (const auto& item : emojiList) {
         auto* btn = new QPushButton(grpHiding);
-        btn->setFixedSize(48, 48);
-        btn->setIcon(QIcon(QStringLiteral(":/emojis/%1.png").arg(name)));
-        btn->setIconSize(QSize(36, 36));
-        btn->setProperty("emojiName", name);
+        btn->setFixedSize(40, 40);
+        btn->setIcon(QIcon(QStringLiteral(":/emojis/%1.png").arg(QString::fromLatin1(item.name))));
+        btn->setIconSize(QSize(28, 28));
+        btn->setToolTip(tr(item.title));
+        btn->setProperty("emojiName", QString::fromLatin1(item.name));
         connect(btn, &QPushButton::clicked, this, &SettingsDialog::onEmojiButtonClicked);
-        emojiGalleryLayout->addWidget(btn);
+        emojiGalleryLayout->addWidget(btn, row, col);
+        col++;
+        if (col >= 10) {
+            col = 0;
+            row++;
+        }
     }
-    emojiGalleryLayout->addStretch();
     emojiParams->addLayout(emojiGalleryLayout);
 
     // Özel emoji seçici
@@ -296,6 +327,7 @@ void SettingsDialog::setupUi()
     m_cmbWatermarkPosition->addItem(tr("Sağ Üst"), static_cast<int>(WatermarkPosition::TopRight));
     m_cmbWatermarkPosition->addItem(tr("Sol Üst"), static_cast<int>(WatermarkPosition::TopLeft));
     m_cmbWatermarkPosition->addItem(tr("Merkez"), static_cast<int>(WatermarkPosition::Center));
+    m_cmbWatermarkPosition->addItem(tr("🎯 Tuval Üzerinde Serbest Konum"), static_cast<int>(WatermarkPosition::Custom));
     grpWmLayout->addWidget(m_cmbWatermarkPosition, 3, 1);
 
     // Opaklık (Saydamlık)
@@ -605,6 +637,8 @@ void SettingsDialog::loadSettingsToUi(const ProcessSettings& s)
     m_edtWatermarkText->setText(s.watermarkText);
     int posIdx = m_cmbWatermarkPosition->findData(static_cast<int>(s.watermarkPosition));
     if (posIdx >= 0) m_cmbWatermarkPosition->setCurrentIndex(posIdx);
+    m_customXRatio = s.watermarkCustomXRatio;
+    m_customYRatio = s.watermarkCustomYRatio;
     m_sldWatermarkOpacity->setValue(s.watermarkOpacity);
     m_spnWatermarkOpacity->setValue(s.watermarkOpacity);
     m_sldWatermarkScale->setValue(s.watermarkScalePercent);
@@ -670,6 +704,8 @@ ProcessSettings SettingsDialog::settings() const
     s.watermarkImagePath = m_edtWatermarkImage->text().trimmed();
     s.watermarkText = m_edtWatermarkText->text().trimmed();
     s.watermarkPosition = static_cast<WatermarkPosition>(m_cmbWatermarkPosition->currentData().toInt());
+    s.watermarkCustomXRatio = m_customXRatio;
+    s.watermarkCustomYRatio = m_customYRatio;
     s.watermarkOpacity = m_spnWatermarkOpacity->value();
     s.watermarkScalePercent = m_spnWatermarkScale->value();
     s.watermarkTextBackground = m_chkWatermarkTextBg->isChecked();
